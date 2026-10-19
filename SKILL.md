@@ -582,6 +582,18 @@ Rules that come from real misreadings, not style preference:
   255 means *connection*, not job failure — re-check `qstat`/`squeue`
   before reporting anything.
 
+
+## Remote control — submit/status/cancel from anywhere
+
+Read `docs/guides/remote-submission.md` + the CLI pages under `docs/cli/` for the full contract. Summary for agents:
+
+- **Positional sugar:** `ezpz submit aurora ...` ≡ `ezpz submit --remote aurora ...`. Same for `status`/`cancel` (`ezpz status aurora --limit 5` lists your jobs on Aurora; job IDs are numeric, hosts alphabetic — no ambiguity).
+- **Auto is IRI-first** on Aurora/Polaris/Crux (fast, JSON, no SSH hop), SSH elsewhere. Token via `uvx alcf-tokens login iri` on the UAN, or `ALCF_IRI_TOKEN`. Scheduler rejections never trigger a fallback — retrying would double-submit.
+- **Fan-out status:** `ezpz status` with no args fans out to every reachable machine (IRI + SSH) into one table (Host/Job ID/User/State/Queue/Output/Exit + running-nodes block like `qmert`). Add `--owner`/`--all-users`/`--historical`/`--states`.
+- **No double launch:** `ezpz submit` already wraps with `ezpz launch`. A redundant `ezpz launch` prefix is auto-stripped with a warning; use `--no-launch` only for custom flags.
+- **Remote workdir:** default is shared-FS `$PBS_O_WORKDIR/ezpz-$PBS_JOBID` (not `/tmp`, which is node-local and would shard output). Every remote script is self-bootstrapping (ALCF proxies → workdir → `source utils.sh` → `uv pip install ezpz` if missing).
+- **Useful commands:** `ezpz status --json`, `ezpz cancel --dry-run`, `ezpz extend --time`, `ezpz resources`, `ezpz incidents`, `ezpz fetch`, `ezpz logs --example test`, `ezpz completion`.
+
 ## Known open issues
 
 **#239** — LoRA + FSDP2 deadlocks in the first backward on Perlmutter
