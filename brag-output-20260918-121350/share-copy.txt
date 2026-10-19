@@ -1,9 +1,0 @@
-ezpz — Write Once. Run Anywhere.
-
-Distributed PyTorch launcher (v0.27.3) that runs the same `ezpz launch python3 train.py` on a laptop, 1 GPU, or a 1,000-node Aurora supercomputer. Zero code changes. 🍋
-
-20s launch video: https://ezpz.cool (or open brag-output-20260918-121350/brag.mp4)
-
-Built with /brag — yc-parody tone (deadpan startup pitch for real HPC boilerplate). Music assets missing in this environment — rendered clean with no audio bed (documented, no broken tracks). Poster: best frame at 2s (hook — "WRITE ONCE." / "import ezpz"), saved as brag.jpg.
-
-#hyperframes #yc-parody #ezpz #pytorch #distributed #hpc

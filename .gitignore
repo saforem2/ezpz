@@ -205,3 +205,12 @@ core\.
 
 # local resolver artifact -- main does not track this
 uv.lock
+
+# root scratch: one-off HPC job scripts, watchers, render outputs, local logs.
+# (Root-anchored on purpose: experiments/ keeps its own tracked *.pbs/*.sbatch.)
+/*.pbs
+/*.sbatch
+/watch_*.sh
+/brag-output-*/
+/.ezpz-submit-*.sh
+/logs/
