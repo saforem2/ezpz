@@ -208,7 +208,7 @@ def get_local_rank() -> int:
         "OMPI_COMM_WORLD_LOCAL_RANK",
         "MPI_LOCALRANKID",
         "MPICH_LOCALRANKID",
-        "SLURM_LOCAL_ID",
+        "SLURM_LOCALID",
     )
     for var in _ENV_VARS:
         val = os.environ.get(var)

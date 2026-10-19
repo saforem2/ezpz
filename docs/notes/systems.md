@@ -98,7 +98,7 @@ If `LOCAL_RANK` is not set, these are checked in order:
 2. `OMPI_COMM_WORLD_LOCAL_RANK`
 3. `MPI_LOCALRANKID`
 4. `MPICH_LOCALRANKID`
-5. `SLURM_LOCAL_ID`
+5. `SLURM_LOCALID`
 
 #### GPUs-Per-Node Fallback Chain
 
