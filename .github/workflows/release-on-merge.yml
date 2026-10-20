@@ -7,7 +7,7 @@ on:
 
 permissions:
   contents: write
-  pull-requests: read
+  pull-requests: write
 
 # Serialize releases. Each merge to main triggers this workflow, which bumps
 # the version, commits, tags, and pushes. Merging several PRs back to back
@@ -191,6 +191,7 @@ jobs:
         if: steps.bump_level.outputs.skip_release != 'true'
         env:
           NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git config user.name "Sam Foreman"
@@ -202,9 +203,23 @@ jobs:
           if [ "${ACT}" = "true" ]; then
             echo "ACT run detected; skipping pushes."
           else
-            git push origin HEAD:main
-            # git push origin "v${NEW_VERSION}"     # <- FIX
-            git push origin --tags
+            # main is PR-only (branch protection, admins included), so the
+            # bump commit lands via an auto-merged bot PR, never a push.
+            # The release:skip label keeps the bot-PR merge from triggering
+            # another release (see Determine bump level).
+            BRANCH="release/v${NEW_VERSION}"
+            git push -f origin "HEAD:${BRANCH}"
+            git push origin "v${NEW_VERSION}"
+            if gh pr view "${BRANCH}" --json number -q .number >/dev/null 2>&1; then
+              gh pr edit "${BRANCH}" --add-label "release:skip"
+            else
+              gh pr create \
+                --base main --head "${BRANCH}" \
+                --title "chore: release v${NEW_VERSION}" \
+                --body "Automated version bump. Auto-merged; does not trigger a further release." \
+                --label "release:skip"
+            fi
+            gh pr merge "${BRANCH}" --rebase --delete-branch
           fi
 
       - name: Publish GitHub release
