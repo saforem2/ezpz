@@ -1186,6 +1186,12 @@ def get_machine(hostname: str | None = None) -> str:
     for prefix, name in _PREFIX_MAP:
         if hostname.startswith(prefix):
             return name
+    # Sirius LOGIN nodes are `sirius-uan-NNNN`; only its COMPUTE nodes are
+    # `x3*` (shared with Polaris, hence the domain check below). Checked
+    # before the `x3` branch so a login node resolves to "Sirius" instead
+    # of falling through to the raw hostname.
+    if hostname.startswith("sirius"):
+        return "Sirius"
     if hostname.startswith("x3"):
         return "Sirius" if "sirius" in hostname else "Polaris"
     return hostname
