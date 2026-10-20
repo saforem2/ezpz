@@ -70,6 +70,7 @@ Guidance for AI coding assistants (and humans) working in this repo.
   `.github/workflows/release-on-merge.yml` to bump the version (via
   `hatch version`), append a `CHANGELOG.md` entry, tag, and cut a GitHub
   release (except `release:skip`).
+- **Never merge a PR with unresolved review comments.** Fetch `gh api repos/saforem2/ezpz/pulls/<N>/comments` and `gh pr view <N> --json comments,reviews`, verify every inline thread is `isResolved` via the GraphQL `reviewThreads` query (or replied + resolved in the UI), address each finding with a code change or a written justification, and re-request review if needed. A green CI alone does not clear a review.
 - **Merge with a merge commit, not squash.** `release-on-merge.yml` builds
   the changelog + release notes from `git log --pretty=%s {prev_tag}..HEAD`
   — i.e. *every* commit in the range. A merge commit preserves each
