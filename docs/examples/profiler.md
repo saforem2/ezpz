@@ -110,6 +110,30 @@ ezpz launch python3 -m ezpz.examples.vit       --model small --profile
 ezpz launch python3 -m ezpz.examples.diffusion --model small --profile
 ```
 
+!!! warning "`fsdp_tp` + `--profile` does not work everywhere ([#275](https://github.com/saforem2/ezpz/issues/275))"
+
+    Measured on `fsdp_tp --model small --tp 2`, 2 nodes:
+
+    | system | result |
+    |---|---|
+    | Polaris | works |
+    | **Aurora** | `RecursionError`, **0 traces** — add `--no-with-stack` |
+    | **Perlmutter** | **hangs**, killed at timeout, 0 traces — no workaround known |
+
+    **Aurora.** `p.key_averages()` walks recorded stacks recursively in
+    torch's `profiler_util.py`, and FSDP2 + TP stacks exceed Python's
+    1000-frame limit. `--no-with-stack` fixes it (job `8881403`: 0
+    traces → 5). Raising `sys.setrecursionlimit()` does **not** — it
+    trades the crash for a hang, which is worse.
+
+    **Perlmutter.** `--profile` alone is enough; a full 2×2 (job
+    `59132774`) shows both profiled arms hanging and both unprofiled
+    arms passing, on either transport. There is no flag that avoids it
+    today.
+
+    The small `ezpz.examples.profiler` loop above profiles fine on every
+    system — this is specific to deep FSDP2 + TP stacks.
+
 The flag-set comes from
 [`add_profiling_args()`][ezpz.cli.flags.add_profiling_args], and each
 module calls `profiling_context_from_args()` the same way — so the
