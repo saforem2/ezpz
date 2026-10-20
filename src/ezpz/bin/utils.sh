@@ -1022,8 +1022,10 @@ ezpz_setup_conda_sirius() {
 		local shell_name
 		shell_name=$(basename "${SHELL}")
 		eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook --shell "${shell_name}")"
-		micromamba activate 2024-04-23
-		return 0
+		if micromamba activate 2024-04-23; then
+			return 0
+		fi
+		log_message WARN "ezpz_setup_conda_sirius: micromamba activate 2024-04-23 failed; trying remaining sources"
 	fi
 	log_message ERROR "ezpz_setup_conda_sirius: no conda source found (tried /soft/modulefiles and ${_mamba_root}/bin/micromamba)"
 	return 1
