@@ -101,17 +101,37 @@ def classify_log(stripped: str, return_code: int) -> tuple[str, str]:
     return "OTHER", f"rc={return_code}, {iters} iters :: {tail}"
 
 
+# Default timeout per trial when arms run argv-identically to the benchmark.
+# bisect2.pbs lesson: capping by --train-iters changes the collective payload
+# and invalidates the comparison (forced --batch-size 1 masked the real hang).
+# So default to wall-clock cap with NO --train-iters override; caller can
+# still pass --train-iters for a smoke-length run.
+DEFAULT_TIMEOUT_S = 420
+
+def _collective_payload_note(extra_argv: list[str]) -> str:
+    """One-line note for logs when caller requested a short smoke."""
+    if any("train-iters" in a for a in extra_argv):
+        return " (smoke: collective payload shortened via --train-iters)"
+    return ""
+
+
 def run_arm(
     arm_key: str,
     arm_cfg: dict,
     trial: int,
     outdir: Path,
     timeout_s: int,
-    train_iters: int,
+    train_iters: int | None,
     extra_argv: list[str],
 ) -> dict:
     label = arm_cfg["label"]
-    argv = list(arm_cfg["argv"]) + ["--train-iters", str(train_iters)] + list(extra_argv)
+    # train_iters=None means: pass no override, run the benchmark's full-epoch
+    # argv so batch_size / payload match exactly (bisect2.pbs). Only inject
+    # --train-iters when caller explicitly asked for smoke-length.
+    argv = list(arm_cfg["argv"])
+    if train_iters is not None:
+        argv += ["--train-iters", str(train_iters)]
+    argv += list(extra_argv)
     log_path = outdir / f"{label}.trial{trial}.log"
     cmd = [sys.executable, "-m", "ezpz.examples.fsdp_tp"] + argv
     env = dict(os.environ)
@@ -178,8 +198,18 @@ def main() -> int:
     )
     parser.add_argument("--list-arms", action="store_true", help="List arms and exit.")
     parser.add_argument("--trials", type=int, default=3, help="Trials per arm (default: 3).")
-    parser.add_argument("--timeout", type=int, default=600, help="Per-trial timeout seconds (default: 600).")
-    parser.add_argument("--train-iters", type=int, default=5, help="--train-iters for fsdp_tp (default: 5).")
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=DEFAULT_TIMEOUT_S,
+        help="Per-trial wall-clock seconds (default: 420, matching bisect2.pbs).",
+    )
+    parser.add_argument(
+        "--train-iters",
+        type=int,
+        default=None,
+        help="Cap steps per arm via --train-iters (smoke only; default: full epoch like benchmark).",
+    )
     parser.add_argument("--outdir", type=str, default=None, help="Output dir for logs/report.")
     parser.add_argument("--extra-args", type=str, default="", help="Extra args forwarded to fsdp_tp.")
     args = parser.parse_args()
