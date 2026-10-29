@@ -68,7 +68,7 @@ def fake_comm(monkeypatch):
         "RANK", "PMI_RANK", "OMPI_COMM_WORLD_RANK", "SLURM_PROCID",
         "LOCAL_RANK", "PALS_LOCAL_RANKID", "PMIX_LOCAL_RANK",
         "PMI_LOCAL_RANK", "OMPI_COMM_WORLD_LOCAL_RANK",
-        "MPI_LOCALRANKID", "MPICH_LOCALRANKID", "SLURM_LOCAL_ID",
+        "MPI_LOCALRANKID", "MPICH_LOCALRANKID", "SLURM_LOCALID",
     ):
         monkeypatch.delenv(var, raising=False)
     comm = _FakeComm(rank=0, size=4)
@@ -227,7 +227,7 @@ class TestGetLocalRank:
         monkeypatch.setenv("MPICH_LOCALRANKID", "6")
         assert dist.get_local_rank() == 6
 
-    def test_from_SLURM_LOCAL_ID(self, fake_comm, monkeypatch):
+    def test_from_SLURM_LOCALID(self, fake_comm, monkeypatch):
         for v in (
             "LOCAL_RANK",
             "PMI_LOCAL_RANK",
@@ -236,7 +236,7 @@ class TestGetLocalRank:
             "MPICH_LOCALRANKID",
         ):
             monkeypatch.delenv(v, raising=False)
-        monkeypatch.setenv("SLURM_LOCAL_ID", "4")
+        monkeypatch.setenv("SLURM_LOCALID", "4")
         assert dist.get_local_rank() == 4
 
     def test_from_PALS_LOCAL_RANKID(self, fake_comm, monkeypatch):
@@ -279,7 +279,7 @@ class TestGetLocalRank:
             "OMPI_COMM_WORLD_LOCAL_RANK",
             "MPI_LOCALRANKID",
             "MPICH_LOCALRANKID",
-            "SLURM_LOCAL_ID",
+            "SLURM_LOCALID",
         ):
             monkeypatch.delenv(v, raising=False)
         monkeypatch.setenv("NGPU_PER_HOST", "12")  # stale FLAT constant
@@ -298,7 +298,7 @@ class TestGetLocalRank:
             "OMPI_COMM_WORLD_LOCAL_RANK",
             "MPI_LOCALRANKID",
             "MPICH_LOCALRANKID",
-            "SLURM_LOCAL_ID",
+            "SLURM_LOCALID",
         ):
             monkeypatch.delenv(v, raising=False)
         comm = _FakeComm(rank=0, size=1)
@@ -315,7 +315,7 @@ class TestGetLocalRank:
             "OMPI_COMM_WORLD_LOCAL_RANK",
             "MPI_LOCALRANKID",
             "MPICH_LOCALRANKID",
-            "SLURM_LOCAL_ID",
+            "SLURM_LOCALID",
             "RANK",
             "PMI_RANK",
             "OMPI_COMM_WORLD_RANK",
@@ -351,7 +351,7 @@ class TestGetLocalRank:
             "OMPI_COMM_WORLD_LOCAL_RANK",
             "MPI_LOCALRANKID",
             "MPICH_LOCALRANKID",
-            "SLURM_LOCAL_ID",
+            "SLURM_LOCALID",
             "RANK",
             "PMI_RANK",
             "OMPI_COMM_WORLD_RANK",
@@ -385,7 +385,7 @@ class TestGetLocalRank:
             "OMPI_COMM_WORLD_LOCAL_RANK",
             "MPI_LOCALRANKID",
             "MPICH_LOCALRANKID",
-            "SLURM_LOCAL_ID",
+            "SLURM_LOCALID",
             "NGPU_PER_HOST",
             "LOCAL_WORLD_SIZE",
             "PMI_LOCAL_SIZE",
@@ -412,7 +412,7 @@ class TestGetLocalRank:
             "OMPI_COMM_WORLD_LOCAL_RANK",
             "MPI_LOCALRANKID",
             "MPICH_LOCALRANKID",
-            "SLURM_LOCAL_ID",
+            "SLURM_LOCALID",
             "NGPU_PER_HOST",
             "LOCAL_WORLD_SIZE",
             "PMI_LOCAL_SIZE",
