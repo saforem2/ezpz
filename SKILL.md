@@ -55,6 +55,8 @@ ezpz submit job.sh -N 4         # or submit an existing script
 `--dry-run` first is worth the two seconds: it prints exactly what would
 be submitted.
 
+When you must hand-write a script, run `.agents/skills/alcf-preflight/preflight.sh` first — see `.agents/skills/alcf-preflight/SKILL.md`.
+
 The rest of this section is for when you genuinely need a hand-written
 script (multi-arm experiment harnesses, custom staging). Everything in
 it is what `ezpz submit` already does correctly.
@@ -596,6 +598,7 @@ Read `docs/guides/remote-submission.md` + the CLI pages under `docs/cli/` for th
 - **Remote workdir:** choose it before environment setup, even with overrides. PBS defaults to `$PBS_O_WORKDIR/ezpz-$PBS_JOBID`, Slurm to `$SLURM_SUBMIT_DIR/ezpz-$SLURM_JOB_ID`; both use a job-specific `$HOME` fallback. Bases must be shared FS, never assume node-local `/tmp` is shared. Explicit `--workdir` is used exactly (no suffix) and must already exist. `mkdir`/`cd` failures stop the job even with `--no-strict`. Local submissions retain their cwd.
 - **Offline setup:** with neither environment option, the remote managed bootstrap still downloads `utils.sh` and may install ezpz. Compute-node internet is not guaranteed; prefer a staged setup script and prebuilt environment. Recognized ALCF targets get proxy settings before setup; non-ALCF targets do not.
 - **Read stdout:** `ezpz fetch JOB_ID --remote sunspot --lines 80 --no-dedupe` takes one PBS stdout snapshot, not a live follow. IRI may discover the path but reading still needs SSH. The current fallback is PBS `qstat`, not Slurm. Do not promise `--out err/both` or portable per-example `logs`: stream selection is incomplete and the current `logs` workdir resolver is site-specific. See `docs/cli/fetch.md`.
+- **Preflight (hand-written scripts):** `.agents/skills/alcf-preflight/preflight.sh <worktree> [venv] [machine] [job-script]` — see `.agents/skills/alcf-preflight/SKILL.md`. `ezpz submit` already covers most gates; use preflight for experiment harnesses and worktree/venv staging.
 - **Useful commands:** `ezpz status --json`, `ezpz cancel --dry-run`, `ezpz extend --time`, `ezpz resources`, `ezpz incidents`, `ezpz fetch`, `ezpz logs --example test`, `ezpz completion`.
 
 ## Known open issues
