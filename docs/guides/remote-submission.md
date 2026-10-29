@@ -1,20 +1,107 @@
 # Remote submission
 
-Queue a job on a machine you are not logged into:
+`ezpz submit` builds a scheduler script locally and submits it on the target
+through SSH or the ALCF IRI API. Choose the job's environment before submitting.
+`--dry-run` renders the script without making a connection or allocating nodes.
+
+## Choose the environment first
+
+The paths below are **target-side placeholders**. Replace `ACCOUNT` and every
+`/shared/PROJECT/USER/...` path with your allocation and real, shared paths on
+the target. Pre-create an explicit workdir and install the workload's dependencies
+into the selected environment before submitting.
 
 ```bash
-ezpz submit aurora -N 128 -q prod -A AuroraGPT \
-    --time 12:00:00 --workdir '/lus/flare/projects/AuroraGPT/me/test' \
-    -- python3 test.py
-# also: ezpz submit --remote aurora ...
+ezpz submit aurora --dry-run -N 2 -q debug -A ACCOUNT \
+    --workdir /shared/PROJECT/USER/runs/example \
+    --env-setup-script /shared/PROJECT/USER/site-setup.sh \
+    --env /shared/PROJECT/USER/venvs/train \
+    -- python3 -m ezpz.examples.test --model debug
 ```
 
-`ezpz submit` builds the scheduler script locally, ships it to the target,
-and submits it there. `--dry-run` prints the script without connecting at
-all, which is the cheapest way to check what would run.
+| Options | Environment setup in the generated job |
+|---|---|
+| `--env PATH` | Activate an existing venv or conda prefix, or select a Python installation. |
+| `--env-setup-script PATH` | Source your shell script in the job shell; it owns the complete setup. |
+| Both | Source the script **first**, then activate/select `--env`. |
+| Neither | Keep the managed default bootstrap. |
+
+`--env` accepts a prefix such as `/shared/PROJECT/USER/venvs/train`, or a Python
+executable under that prefix's `bin/` directory. Executable paths select the
+containing installation; they do not rewrite the payload's interpreter name.
+Use a command installed in that environment, or its explicit Python path.
+Versioned-only installations (for example, `bin/python3.13`) need not provide
+unversioned aliases; use the versioned executable in the payload if necessary.
+A conda prefix is recognized by `conda-meta`; conda's Bash hook and
+`conda activate PATH` run before the command. Initialize conda in the setup
+script if it is not already available in the batch shell.
+
+Use `--env-setup-script` for site-specific module initialization, library paths,
+cache settings, and other prerequisites. It is **sourced**, not executed in a
+separate process, so exports and shell functions remain available. With both
+options, load site prerequisites in the script and let `--env` select Python.
+An environment directory alone does **not** load a site's accelerator/MPI modules.
+A venv's activation must resolve to that same prefix; moved/copied venvs with
+stale activation paths fail explicitly rather than silently selecting another
+environment. Recreate or repair such an environment before using it.
+
+Either explicit option replaces the managed environment bootstrap: ezpz does
+not inject a curl download or install packages into your chosen environment.
+Install ezpz there beforehand when using the default `ezpz launch` wrapper.
+A missing launcher in the selected environment is an error, not permission to
+run ezpz from a different environment on `PATH`.
+
+Relative setup-script names resolve against the job workdir, never `PATH`.
+Relative environment paths remain anchored there even if your setup script
+changes directory.
+
+Paths are interpreted **on the machine running the job**. A remote setup script
+need not exist on your laptop, and ezpz does not upload it. Stage the script,
+environment, source, and cached datasets/models on shared storage before the
+job. Compute nodes cannot be assumed to have internet access. The managed
+remote default still fetches `utils.sh` and may install missing ezpz, so use
+explicit setup for offline or reproducible runs.
+
+These options also work for local generated-command submissions. They are
+rejected when submitting an existing scheduler script (`ezpz submit job.pbs`):
+put setup inside that script instead. The Python API's `env_setup` remains raw
+shell. For local default setup, `EZPZ_SETUP_ENV` retains its script/inline-shell
+behavior; it is not an environment-prefix option.
+
+!!! warning "Migrating the old `--env`"
+
+    `--env` no longer accepts inline shell or a setup script. Replace
+    `--env /path/setup.sh` with `--env-setup-script /path/setup.sh`. Move inline
+    commands into a real target-side script and source it with that option.
+
+## Job-unique working directories on PBS and Slurm
+
+Remote generated scripts select and enter the workdir **before** environment
+setup, even with either override. Without `--workdir`, both schedulers get a
+job-specific directory:
+
+| Scheduler | Submit directory available | Submit directory unavailable |
+|---|---|---|
+| PBS | `$PBS_O_WORKDIR/ezpz-$PBS_JOBID` | `$HOME/ezpz-$PBS_JOBID` |
+| Slurm | `$SLURM_SUBMIT_DIR/ezpz-$SLURM_JOB_ID` | `$HOME/ezpz-$SLURM_JOB_ID` |
+
+The base must be shared across all job nodes. `/tmp` is node-local and is not
+the default; using it deliberately requires an explicit distribution/staging
+workflow such as `ezpz yeet --compress` and durable output placement.
+`--workdir` uses the directory **exactly as given**, with no suffix; pre-create
+it on the target. Relative environment/setup paths are relative to the job's
+workdir, not your laptop. Prefer absolute target paths. A failed `mkdir` or `cd`
+stops the job even with `--no-strict`. Explicit setup runs with fail-fast
+shell behavior; `--no-strict` is restored for the workload after setup succeeds.
+
+The submitter's local cwd is never copied into a remote script. Local
+submissions without `--remote` retain their current-directory behavior.
+
+## Host shorthand
 
 Positional host sugar: `ezpz submit aurora ...` ≡ `ezpz submit --remote aurora ...`;
-`ezpz status aurora` ≡ `ezpz status --remote aurora`. `ezpz status` with no `JOB_ID` and no `--remote` fans out to every reachable machine and merges the results.
+`ezpz status aurora` ≡ `ezpz status --remote aurora`. `ezpz status` with no
+`JOB_ID` and no `--remote` fans out across known machines and merges results.
 
 ## Two backends
 
@@ -36,7 +123,7 @@ instead of text that has to be scraped out of `qstat`, but it serves only
 Aurora, Polaris and Crux — **not Sunspot, and not Perlmutter** (NERSC runs
 its own Superfacility API).
 
-Get a token once (from the Aurora UAN):
+Get a token on the machine invoking ezpz (your laptop or login node):
 
 ```bash
 uvx alcf-tokens login iri
@@ -46,64 +133,30 @@ Or for a persistent install: `uv tool install alcf-tokens` then `alcf-tokens log
 
 `ALCF_IRI_TOKEN` is honoured if you would rather supply one directly.
 
-## When `auto` falls back, and when it must not
+## Backend choice and retry safety
 
-On IRI-capable hosts (Aurora, Polaris, Crux) `auto` is **IRI-first**: try
-the IRI API, and only on auth/network/transport failure fall back to SSH
-(`qsub`/`sbatch` over an SSH hop). A scheduler rejection on either path
-is never retried — it means "fix the request," and retrying would risk a
-double-submit. On non-IRI hosts (Sunspot, Perlmutter, Frontier) `auto`
-goes straight to SSH; there is no IRI to fall back to.
+On Aurora, Polaris, and Crux, `auto` tries IRI first. Other targets go directly
+to SSH. Choose `--backend ssh` or `--backend iri` to disable automatic fallback.
+The successful submission output records which backend returned the job ID.
 
-The old table (SSH 255 → IRI) still describes the SSH leg, but the IRI leg
-is now tried first:
+On the SSH leg, exit `255` denotes a transport failure. Other nonzero exits
+are reported as scheduler/remote-command failures rather than retried through
+IRI. Bad queues, invalid filesystems, and allocation limits generally need a
+corrected request, not a second transport.
 
-| Outcome | Meaning | What happens |
-|---|---|---|
-| IRI `0` / SSH `0` | Submitted | Done |
-| IRI `401` / network error (auto only) | Token expired / unreachable | Fall back to SSH |
-| SSH `255` (transport) | Unreachable / auth rejected | Fall back (only relevant when IRI was skipped) |
-| Any scheduler rejection (`rc=1`) | Bad queue / over quota / bad FS | Stop, show the scheduler's message |
+!!! warning "Current IRI fallback limitation"
 
-The distinction is not cosmetic. `ssh` returns its own status only for
-transport failures; for everything else it passes through the remote
-command's exit code:
+    The current IRI-first implementation catches `RemoteSubmitError` broadly
+    before falling back to SSH. It does not classify every IRI failure as
+    definitely pre-submission. Do not assume that a timeout means no job was
+    created. For controlled mutation workflows, select an explicit backend and
+    inspect job state before retrying an ambiguous submission failure.
 
-```console
-$ ssh unreachable.invalid true          ; echo $?
-255
-$ ssh aurora 'exit 42'                  ; echo $?
-42
-$ ssh aurora 'qsub /nonexistent.pbs'    ; echo $?
-1
-```
-
-**A scheduler rejection is never retried on another backend.** It would
-either reproduce the rejection with a worse error message, or — if the
-first submission actually landed before the non-zero exit — **submit the
-job twice**. These are all `rc=1`, and all of them mean "fix the request",
-not "try another road":
-
-```text
-qsub: Request rejected. Reason: No active allocation found for project ...
-qsub: Invalid filesystem identifiers gila
-qsub: would exceed queue generic's per-user limit of jobs in 'Q' state
-```
-
-Two further guards:
-
-- **No fallback where IRI cannot help.** On Sunspot or Perlmutter a 255
-  is fatal, and the error says so rather than attempting a doomed call.
-- **The backend used is always reported**, so you can tell afterwards
-  which path a job took:
-
-  ```console
-  $ ezpz submit --remote aurora -N 2 -q debug -A myproj -- python3 x.py
-  8879044.aurora-pbs-0001  (via ssh)
-  ```
-
-Force one backend with `--backend ssh` or `--backend iri` when you do not
-want the automatic behaviour.
+The intended safety rule is to avoid resubmitting anything the scheduler may
+already have accepted. In particular, never blindly retry a lost HTTP response,
+a connection dropped after submission, or a scheduler rejection on a different
+backend. `--dry-run` avoids all submission side effects while you check the
+request and environment script.
 
 ## Choosing a backend
 
@@ -137,7 +190,7 @@ Prefer **`iri`** when:
     ezpz submit --remote perlmutter \
         -N 2 -q regular -A m4388_g --time 00:30:00 \
         -C gpu --gpus-per-node 4 --ntasks-per-node 4 \
-        --workdir "$SCRATCH/run" \
+        --workdir /shared/PROJECT/USER/runs/example \
         -- python3 -m ezpz.examples.test --model small
     ```
 
@@ -157,26 +210,26 @@ Prefer **`iri`** when:
         -- python3 test.py
     ```
 
-## Notes
+## Read job output with `ezpz fetch`
 
-**Working directory.** Without `--workdir`, the job starts in a per-job
-directory under the scheduler's submit dir
-(`$PBS_O_WORKDIR/ezpz-$PBS_JOBID` on PBS, `$SLURM_SUBMIT_DIR/…` on SLURM,
-`$HOME` fallback) on **shared FS** — not `/tmp` (which is node-local and
-would shard output across nodes). Pass `--workdir` explicitly when you want
-to control the location.
-
-**Environment setup.** Every remote script is self-bootstrapping — it sets
-ALCF proxies, `cd`s into its workdir, then:
+For PBS jobs, fetch a stdout snapshot using your own job ID:
 
 ```bash
-source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
-# ensure ezpz is present (handles fresh/empty venvs)
-uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz"
+# Historical example ID; replace it with the ID returned by your submission.
+ezpz fetch 12481065 --remote sunspot --lines 80 --no-dedupe
 ```
 
-Overridable with `--env` for site-specific setup. The old target-resolved
-`python3 -c 'import ezpz ...'` path still works but is no longer the default.
+This prints the last 80 stdout lines once; it does not follow the file.
+`--no-dedupe` preserves repeated lines. The default remote behavior collapses
+adjacent identical lines after taking the tail.
+
+IRI can supply the output path, but the file is still read over SSH. Without
+usable IRI metadata, fetch discovers PBS `Output_Path` through `qstat -xf`.
+You need working noninteractive SSH authentication and a readable output file.
+The current fallback does not discover Slurm output paths. See the
+[`ezpz fetch` reference](../cli/fetch.md) for current stream limitations.
+
+## Launch wrapping
 
 !!! note "No double `ezpz launch`"
 
@@ -186,10 +239,9 @@ Overridable with `--env` for site-specific setup. The old target-resolved
     only when you need custom launch flags (`ezpz submit --no-launch --
     ezpz launch --timeout 600 -- python train.py`).
 
-**Working directory (remote).** By default the remote script creates
-`$PBS_O_WORKDIR/ezpz-$PBS_JOBID` (or `$SLURM_SUBMIT_DIR` / `$HOME` fallback)
-on **shared FS**, not `/tmp` (which is node-local and would shard output).
-Pass `--workdir` explicitly to pin the location.
+For a controller such as `ezpz benchmark` that launches its own distributed
+payloads, use `--no-launch` so the controller runs once per job, not once per
+rank. Do not submit a benchmark controller under another `ezpz launch`.
 
 ## See also
 

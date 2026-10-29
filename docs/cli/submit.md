@@ -3,6 +3,47 @@
 Submit jobs to PBS (`qsub`) or SLURM (`sbatch`) schedulers directly from
 the command line.
 
+## Environment setup
+
+Choose the environment explicitly before submitting. `--env PATH` selects an
+existing venv, conda prefix, or Python installation on the job's machine.
+`--env-setup-script PATH` sources your site-specific shell script **before**
+selecting that environment. Either option replaces managed environment setup;
+ezpz does not download scripts or install packages into your explicit environment.
+
+```bash
+# Replace ACCOUNT and /shared/PROJECT/USER paths with real target-side values.
+# Pre-create the shared workdir and install ezpz into the selected environment.
+ezpz submit aurora --dry-run -N 2 -q debug -A ACCOUNT \
+    --workdir /shared/PROJECT/USER/runs/example \
+    --env-setup-script /shared/PROJECT/USER/site-setup.sh \
+    --env /shared/PROJECT/USER/venvs/train \
+    -- python3 -m ezpz.examples.test --model debug
+```
+
+An environment directory does not automatically load site modules. Put those
+prerequisites in the setup script. Script-only mode owns the complete setup;
+env-only mode activates/selects Python. With neither option, managed defaults
+remain. Stage scripts and environments on target-side shared storage; ezpz does
+not upload them or check remote paths against your laptop's filesystem.
+
+A conda prefix runs the conda Bash hook and `conda activate PATH`; initialize
+conda in your script if needed. A Python executable under `PREFIX/bin/` selects
+that containing installation, without rewriting the payload's interpreter name.
+Use an interpreter name available there, or an explicit executable in the payload.
+Versioned-only installations do not need `python`/`python3` aliases.
+
+These flags apply to both local and remote **generated commands**. Existing
+scheduler scripts own their setup and reject the environment flags. For the
+complete ordering, defaults, and offline setup guidance, read
+[Remote submission](../guides/remote-submission.md#choose-the-environment-first).
+
+!!! warning "`--env` migration"
+
+    `--env` now means an environment path, not shell commands or a script.
+    Change `--env setup.sh` to `--env-setup-script setup.sh`. Move inline shell
+    into a real setup script. The Python API's `env_setup` remains raw shell.
+
 ## Two Modes
 
 ### 1. Wrap a command
@@ -18,7 +59,7 @@ ezpz submit -N 2 -q debug -t 01:00:00 \
 The generated script includes:
 
 - Scheduler directives (`#PBS` or `#SBATCH`)
-- Activation of your current Python environment (venv or conda)
+- Explicit environment setup, or the managed default when neither override is set
 - `ezpz launch` wrapping for distributed execution
 
 ### 2. Submit an existing script
@@ -40,6 +81,8 @@ ezpz submit job.sh --nodes 4 --time 02:00:00
 | `--filesystems` | PBS filesystems directive (default: `home`) |
 | `--job-name` | Job name (auto-derived from command if omitted) |
 | `--scheduler` | Force `PBS` or `SLURM` (auto-detected by default) |
+| `--env PATH` | Existing target-side venv/conda/Python prefix, or a Python executable under its `bin/` directory |
+| `--env-setup-script PATH` | Target-side shell script to source before selecting `--env` |
 | `--dry-run` | Print the script without submitting |
 | `--launch` / `--no-launch` | Wrap the command with `ezpz launch` (default: on) |
 | `--gpus-per-node` | SLURM `--gpus-per-node` (ignored for PBS) |
@@ -48,7 +91,7 @@ ezpz submit job.sh --nodes 4 --time 02:00:00
 | `--strict` / `--no-strict` | Emit `set -eo pipefail` (default: on) |
 | `--remote` | Submit to another machine, e.g. `--remote aurora` or positional `aurora` (see below) |
 | `--backend` | `auto` (default), `ssh`, or `iri` — see [Remote submission](../guides/remote-submission.md) |
-| `--workdir` | Remote working directory (with `--remote`). Default: shared-FS per-job dir `$PBS_O_WORKDIR/ezpz-$PBS_JOBID` (not `/tmp`). |
+| `--workdir` | Exact remote working directory (pre-create it). Otherwise use shared-FS `$PBS_O_WORKDIR/ezpz-$PBS_JOBID` or `$SLURM_SUBMIT_DIR/ezpz-$SLURM_JOB_ID`, with a job-specific `$HOME` fallback. Never default to node-local `/tmp`. |
 
 !!! tip "Positional remote sugar"
 
@@ -106,17 +149,40 @@ ezpz submit --launch -N 1 -q debug \
     -- python3 -m ezpz.examples.test
 ```
 
-## Environment Detection
+## Managed defaults
 
-The generated script automatically activates your current environment:
+Without either environment flag, local submissions use `EZPZ_SETUP_ENV` when
+set (a setup file or inline shell), otherwise the installed `utils.sh` and
+`ezpz_setup_env`. This is site-aware setup, not a guarantee that the submitter's
+current `VIRTUAL_ENV` or `CONDA_PREFIX` is reproduced. Use `--env` to select one.
 
-- **venv**: If `VIRTUAL_ENV` is set, adds `source $VIRTUAL_ENV/bin/activate`
-- **conda**: If `CONDA_PREFIX` is set, adds `conda activate <env_name>`
-- **Custom**: If `EZPZ_SETUP_ENV` points to a file, sources it
+Remote defaults choose the job-unique workdir, set proxies on recognized ALCF
+targets, fetch `utils.sh`, and may install missing ezpz. This requires network
+access; prefer staged setup scripts and a prebuilt environment for offline runs.
+
+Remote workdir selection is independent of the environment overrides and always
+happens first. Slurm jobs also get a job-ID suffix, including when `$HOME` is
+the fallback base. Explicit `--workdir` directories are not suffixed.
 
 ## Example: `ezpz benchmark` on Aurora
 
-Submit `ezpz benchmark` to run on 2 nodes:
+The benchmark controller launches its own distributed payloads. Run it once
+with `--no-launch`:
+
+```bash
+# Target-side placeholders; install ezpz and the benchmark dependencies first.
+ezpz submit sunspot --dry-run --no-launch -N 2 -q workq -A ACCOUNT \
+    --env-setup-script /shared/PROJECT/USER/site-setup.sh \
+    --env /shared/PROJECT/USER/venvs/train \
+    -- ezpz benchmark
+```
+
+Use [`ezpz fetch`](fetch.md) to retrieve a PBS stdout snapshot after submission.
+
+### Historical benchmark run
+
+The transcript below records an older v0.11.3 run. It is not the current script
+or environment-option contract; use the commands above for new submissions.
 
 ```bash
 #[aurora_frameworks-2025.3.1](ezpz-aurora_frameworks-2025.3.1)

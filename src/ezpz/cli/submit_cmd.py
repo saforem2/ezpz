@@ -50,9 +50,16 @@ import click
 )
 @click.option(
     "--env",
-    "env_setup",
+    "env_path",
     default=None,
-    help="Environment setup: a script path or inline shell commands.",
+    metavar="PATH",
+    help="Target-side venv/conda/Python prefix or Python executable path.",
+)
+@click.option(
+    "--env-setup-script",
+    default=None,
+    metavar="PATH",
+    help="Shell script to source on the job machine before selecting --env.",
 )
 @click.option(
     "--dry-run",
@@ -74,10 +81,9 @@ import click
     default="auto",
     type=click.Choice(["auto", "ssh", "iri"]),
     help=(
-        "Remote backend (with --remote). 'auto' tries SSH and falls back "
-        "to the ALCF IRI API only if SSH itself cannot connect; a "
-        "scheduler rejection is never retried. 'iri' serves Aurora, "
-        "Polaris and Crux only."
+        "Remote backend (with --remote). 'auto' tries IRI first on "
+        "Aurora/Polaris/Crux, with SSH fallback; other hosts use SSH. "
+        "Choose 'ssh' or 'iri' to disable automatic fallback."
     ),
 )
 @click.option(
@@ -130,7 +136,8 @@ def submit_cmd(
     filesystems: str,
     job_name: str | None,
     scheduler: str | None,
-    env_setup: str | None,
+    env_path: str | None,
+    env_setup_script: str | None,
     dry_run: bool,
     launch: bool,
     gpus_per_node: int | None,
@@ -150,9 +157,19 @@ def submit_cmd(
     """
     from ezpz.submit import submit
 
+    for option, value in (
+        ("--env", env_path),
+        ("--env-setup-script", env_setup_script),
+    ):
+        if value is not None and not value.strip():
+            raise click.BadParameter(
+                "expected a non-empty target-side path", param_hint=option
+            )
+
     # Positional remote sugar: ezpz submit aurora -- ...  ≡  --remote aurora
     if args and not remote:
         from ezpz.remote import looks_like_host
+
         if looks_like_host(args[0]):
             remote = args[0]
             args = args[1:]
@@ -180,6 +197,14 @@ def submit_cmd(
         else:
             command = list(args)
 
+    if script_path is not None and (
+        env_path is not None or env_setup_script is not None
+    ):
+        raise click.UsageError(
+            "--env and --env-setup-script apply only to generated commands; "
+            "put environment setup inside an existing job script."
+        )
+
     if script_path is None and command is None:
         raise click.UsageError(
             "Provide a command after '--' or a script file.\n\n"
@@ -192,15 +217,19 @@ def submit_cmd(
     # (CXI LE-pool exhaustion on Sunspot if double-wrapped). Warn so the caller
     # knows it happened, but don't fail — the intent is unambiguous.
     if command and launch:
-        joined = " ".join(command) if isinstance(command, list) else str(command)
+        joined = (
+            " ".join(command) if isinstance(command, list) else str(command)
+        )
         if joined.lstrip().startswith("ezpz launch "):
             click.echo(
                 "warning: stripping redundant `ezpz launch` — `ezpz submit` already wraps with it "
                 "(use --no-launch if you need custom launch flags)",
                 err=True,
             )
-            stripped = joined.lstrip()[len("ezpz launch "):]
-            command = stripped.split() if isinstance(command, list) else stripped
+            stripped = joined.lstrip()[len("ezpz launch ") :]
+            command = (
+                stripped.split() if isinstance(command, list) else stripped
+            )
         elif "ezpz launch" in joined:
             # Non-prefix occurrence (e.g. in a quoted arg) — still likely a mistake, but
             # don't mangle it; just warn and leave as-is so --no-launch remains the escape hatch.
@@ -210,13 +239,14 @@ def submit_cmd(
                 err=True,
             )
 
-    # Resolve --env: if it's a file path, source it; otherwise use verbatim
-    resolved_env: str | None = None
-    if env_setup is not None:
-        if Path(env_setup).is_file():
-            resolved_env = f"source {env_setup}"
-        else:
-            resolved_env = env_setup
+    from ezpz.remote_env import build_env_setup
+
+    resolved_env = build_env_setup(
+        env_path,
+        env_setup_script,
+        require_ezpz=launch
+        or bool(command and Path(command[0]).name == "ezpz"),
+    )
 
     if remote:
         _submit_remote(
@@ -262,20 +292,13 @@ def submit_cmd(
     )
 
 
-# Resolve utils.sh on the TARGET at runtime. `python3 -c` is used rather
-# than a hard-coded path because the install prefix differs per machine
-# (conda on Polaris, frameworks on Aurora, a venv elsewhere), and a
-# wrong absolute path fails as "No such file" inside the job.
-# Remote env setup: self-bootstrapping (proxies + workdir + install). See src/ezpz/remote_env.py.
-
-
 def _submit_remote(
     *,
     remote: str,
     backend: str,
     workdir: str | None,
     command: list[str] | None,
-    script_path: str | None,
+    script_path: Path | None,
     nodes: int,
     walltime: str,
     queue: str,
@@ -305,6 +328,7 @@ def _submit_remote(
         submit_remote,
     )
     from ezpz.submit import generate_pbs_script, generate_slurm_script
+    from ezpz.remote_env import build_remote_env_setup
 
     sched = (scheduler or scheduler_for(remote)).upper()
     if script_path:
@@ -318,21 +342,25 @@ def _submit_remote(
             "queue": queue,
             "account": account,
             "job_name": job_name,
-            # Never leak the LOCAL cwd into a remote script: the
-            # generator defaults working_dir to os.getcwd(), which does
-            # not exist on the target machine. Default to the remote
-            # $HOME instead and let --workdir override.
-            "working_dir": "",  # remote: cd handled inside env_setup (WORKDIR/tmpdir), not here
-            # Environment setup for a remote job is genuinely awkward:
-            # a LOCAL utils.sh path is meaningless on the target, but
-            # the curl form runs on a COMPUTE node, which has no
-            # outbound route -- it hangs ~270 s and then leaves the job
-            # unconfigured (the ezpz#268 failure, one machine away).
-            #
-            # Default to sourcing ezpz's own copy resolved ON the target
-            # at runtime, falling back to curl only if that is missing.
-            # Overridable with --env.
-            "env_setup": env_setup or __import__("ezpz.remote_env", fromlist=["build_remote_env_setup"]).build_remote_env_setup(workdir),
+            # Never copy the local cwd into a remote script. The shared
+            # per-job or explicit workdir is selected inside env_setup,
+            # independently of either environment override.
+            "working_dir": "",
+            # Explicit setup avoids managed network/bootstrap steps.
+            "env_setup": build_remote_env_setup(
+                workdir,
+                env_setup=env_setup,
+                alcf_proxies=remote.lower().startswith(
+                    (
+                        "aurora",
+                        "sunspot",
+                        "polaris",
+                        "crux",
+                        "sophia",
+                        "sirius",
+                    )
+                ),
+            ),
             "wrap_with_launch": launch,
         }
         if sched == "PBS":

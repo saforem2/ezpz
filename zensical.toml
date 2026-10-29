@@ -86,6 +86,7 @@ nav = [
         { "📊 <code>ezpz benchmark</code>" = "cli/benchmark.md" },
         { "📮 <code>ezpz submit</code>" = "cli/submit.md" },
         { "📊 <code>ezpz status</code>" = "cli/status.md" },
+        { "📄 <code>ezpz fetch</code>" = "cli/fetch.md" },
         { "🚫 <code>ezpz cancel</code>" = "cli/cancel.md" },
         { "⏱️ <code>ezpz extend</code>" = "cli/extend.md" },
         { "🖥️ <code>ezpz resources</code>" = "cli/resources.md" },
