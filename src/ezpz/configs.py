@@ -894,6 +894,14 @@ class HfDataTrainingArguments:
     streaming: bool = field(
         default=False, metadata={"help": "Enable streaming mode"}
     )
+    storage_options: Optional[dict] = field(
+        default=None,
+        metadata={
+            "help": "fsspec storage_options forwarded to datasets.load_dataset "
+            "(e.g. '{\"globus\": {\"anon\": true}}' or '{\"s3\": {\"key\": ...}}'). "
+            "JSON string or dict; parsed automatically."
+        },
+    )
     block_size: Optional[int] = field(
         default=None,
         metadata={
@@ -930,6 +938,9 @@ class HfDataTrainingArguments:
     def __post_init__(self):
         """Validate dataset arguments and ensure required files are present."""
         from transformers.utils.versions import require_version
+
+        if isinstance(self.storage_options, str):
+            self.storage_options = json.loads(self.storage_options)
 
         if self.streaming:
             require_version(

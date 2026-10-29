@@ -133,4 +133,11 @@ texts = load_hf_texts(
 )
 ```
 
+### Remote streaming via `globusfs` / any `fsspec` backend
+
+`HfDataTrainingArguments.storage_options` is forwarded to every
+`datasets.load_dataset(..., storage_options=...)` call, so `globus://`,
+`s3://`, `gs://`, etc. all work in streaming mode. See the dedicated
+section in [`ezpz.data.hf`](hf.md#remote-streaming-via-globusfs).
+
 ::: ezpz.data
