@@ -55,11 +55,7 @@ ezpz submit job.sh -N 4         # or submit an existing script
 `--dry-run` first is worth the two seconds: it prints exactly what would
 be submitted.
 
-When you must hand-write a script (multi-arm harnesses, custom staging),
-run the preflight gate first — see `.agents/skills/alcf-preflight/SKILL.md`
-(`.agents/skills/alcf-preflight/preflight.sh <worktree> [venv] [machine] [job-script]`).
-It gates on `ZE_FLAT`, `MODULEPATH`, shared FS, stale worktree and stale
-`setup_torch` kwargs without needing a queue allocation.
+When you must hand-write a script, run `.agents/skills/alcf-preflight/preflight.sh` first — see `.agents/skills/alcf-preflight/SKILL.md`.
 
 The rest of this section is for when you genuinely need a hand-written
 script (multi-arm experiment harnesses, custom staging). Everything in

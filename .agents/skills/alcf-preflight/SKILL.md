@@ -1,6 +1,6 @@
 ---
 name: alcf-preflight
-description: Use BEFORE submitting any PBS/Slurm job on Aurora, Sunspot, Polaris, Perlmutter or Sophia. Gates on ZE_FLAT, MODULEPATH, shared-filesystem paths, stale worktree, and Python API signatures — every check catchable without a queue allocation.
+description: Use BEFORE submitting any PBS/Slurm job on Aurora, Sunspot, Polaris, Perlmutter or Sophia. Gates on ZE_FLAT, shared-FS paths, stale worktree, and Python API — every check catchable without a queue allocation.
 ---
 
 # ALCF preflight
@@ -29,17 +29,18 @@ Exits non-zero on any `BAD` line. Every gate below is enforced there.
 
 | gate | `BAD` when | why it bites |
 |------|-----------|--------------|
-| `ZE_FLAT_DEVICE_HIERARCHY=FLAT` | env var not `FLAT` on Aurora/Sunspot | PVC tile is hidden under `COMPOSITE`; `device index out of range [0, 6)` at 12 ranks/node |
-| `#!/bin/bash --login` + `MODULEPATH` | script shebang lacks `--login`, or `MODULEPATH` empty | PBS has no `module` without login; `module load` becomes silent no-op, `CONDA_PREFIX still not set` downstream |
-| shared FS | workdir or script path under `/tmp` | compute `/tmp` is node-local `tmpfs`; job starts then dies opening a second file |
+| `ZE_FLAT_DEVICE_HIERARCHY=FLAT` | env var not `FLAT` on Aurora/Sunspot | PVC tile hidden under `COMPOSITE`; `device index out of range [0, 6)` at 12 ranks/node |
+| `#!/bin/bash --login` | script shebang lacks `--login` | PBS has no `module` without login; `module load` is silent no-op, `CONDA_PREFIX still not set` |
+| `set -u` | script contains `set -u` | breaks Lmod (`/etc/profile`, `ZSH_EVAL_CONTEXT`) |
+| shared FS | worktree/venv/script under `/tmp` or `/dev/shm` | compute `/tmp` is node-local `tmpfs`; job starts then dies opening a second file |
 | worktree current | `HEAD != @{u}` | stale checkout misses files a recent commit moved/added |
-| `inspect.signature` | `bind()` on `setup_torch`/`get_torch_device` fails | renamed kwarg (`backend=`) passed locally, dies only on compute |
+| `ezpz.distributed` import | venv's `ezpz` not importable | wrong venv or stale install |
 
-Python deps (`torch`, `mpi4py`, `ezpz`) are checked only when a venv is given; skip them for `ezpz submit` flows where the job bootstraps its own env.
+Python gates run only when a venv is given; skip them for `ezpz submit` flows where the job bootstraps its own env.
 
 ## Before every submission
 
-1. **Dry-run the APIs** — `inspect.signature(ezpz.distributed.setup_torch).bind(...)` with the exact kwargs the job will use. Presence checks are not enough.
+1. **Dry-run the APIs** — `inspect.signature(ezpz.distributed.setup_torch).bind(kwargs)` with the exact kwargs the job will use. A bare `bind()` with no args tests nothing — pass the real args.
 2. **Preflight the worktree** — run `preflight.sh` in the checkout the job will read at runtime.
 3. **Check the worktree is current** — a pinned worktree silently measures the wrong code.
 
@@ -53,7 +54,7 @@ Python deps (`torch`, `mpi4py`, `ezpz`) are checked only when a venv is given; s
 
 ## Machine facts
 
-- **Aurora/Sunspot**: XPU, 6 devices `COMPOSITE` / 12 `FLAT`. `ZE_FLAT_DEVICE_HIERARCHY=FLAT` set by `utils.sh`.
+- **Aurora/Sunspot**: XPU, 6 devices `COMPOSITE` / 12 `FLAT`. `ZE_FLAT_DEVICE_HIERARCHY=FLAT` set by `ezpz_setup_env`.
 - **Polaris**: CUDA, PBS, `cray-pals` + `libfabric`. `qsub` at `/opt/pbs/bin/qsub`.
 - **Perlmutter**: CUDA, Slurm, `cudatoolkit/12.9`, `nccl/2.24.3`. Needs `--gpus-per-node 4 -C gpu`.
 - **Sophia**: CUDA, PBS.
