@@ -312,6 +312,7 @@ def split_dataset(
     )
     assert cache_dir is not None and isinstance(cache_dir, (str, os.PathLike))
     cache_dir = Path(cache_dir).as_posix()
+    _so = getattr(data_args, "storage_options", None)
     if validation_split_name is not None:
         try:
             dsets[validation_split_name] = datasets.load_dataset(  # type:ignore
@@ -321,6 +322,7 @@ def split_dataset(
                 cache_dir=cache_dir,
                 token=token,
                 streaming=data_args.streaming,
+                storage_options=_so,
                 trust_remote_code=trust_remote_code,
             )
             dsets[train_split_name] = datasets.load_dataset(  # type: ignore
@@ -330,6 +332,7 @@ def split_dataset(
                 cache_dir=cache_dir,
                 token=token,
                 streaming=data_args.streaming,
+                storage_options=_so,
                 trust_remote_code=trust_remote_code,
             )
         except ValueError:
@@ -342,6 +345,7 @@ def split_dataset(
                 cache_dir=cache_dir,
                 token=token,
                 streaming=data_args.streaming,
+                storage_options=_so,
                 trust_remote_code=trust_remote_code,
             )
             try:
@@ -352,6 +356,7 @@ def split_dataset(
                     cache_dir=cache_dir,
                     token=token,
                     streaming=data_args.streaming,
+                    storage_options=_so,
                     trust_remote_code=trust_remote_code,
                 )
             except Exception:
@@ -364,6 +369,7 @@ def split_dataset(
                     cache_dir=cache_dir,
                     token=token,
                     streaming=data_args.streaming,
+                    storage_options=_so,
                     trust_remote_code=trust_remote_code,
                 )
 
@@ -436,11 +442,15 @@ def get_hf_datasets(
         if extension == "txt":
             extension = "text"
             dataset_args["keep_linebreaks"] = data_args.keep_linebreaks
+        _so = _get_storage_options(data_args)
+        _streaming = getattr(data_args, "streaming", False)
         raw_datasets = datasets.load_dataset(
             extension,
             data_files=data_files,
             cache_dir=cache_dir,
             token=token,
+            streaming=_streaming,
+            storage_options=_so,
             **dataset_args,
         )
         # If no validation data is there, validation_split_percentage will be used to divide the dataset.
@@ -451,6 +461,8 @@ def get_hf_datasets(
                 split=f"{train_split_name}[:{data_args.validation_split_percentage}%]",
                 cache_dir=cache_dir,
                 token=token,
+                streaming=_streaming,
+                storage_options=_so,
                 **dataset_args,
             )
             raw_datasets[train_split_name] = datasets.load_dataset(  # type:ignore
@@ -459,6 +471,8 @@ def get_hf_datasets(
                 split=f"{train_split_name}[{data_args.validation_split_percentage}%:]",
                 cache_dir=cache_dir,
                 token=token,
+                streaming=_streaming,
+                storage_options=_so,
                 **dataset_args,
             )
 
@@ -684,6 +698,10 @@ def get_hf_datasets(
             return logits.argmax(dim=-1)
 
 
+def _get_storage_options(data_args) -> Optional[dict]:
+    return getattr(data_args, "storage_options", None)
+
+
 def get_hf_datasets_wip(
     # data_args,
     dataset_name: str,
@@ -754,11 +772,15 @@ def get_hf_datasets_wip(
         if extension == "txt":
             extension = "text"
             dataset_args["keep_linebreaks"] = data_args.keep_linebreaks
+        _so = _get_storage_options(data_args)
+        _streaming = getattr(data_args, "streaming", False)
         raw_datasets = datasets.load_dataset(
             extension,
             data_files=data_files,
             cache_dir=cache_dir,
             token=token,
+            streaming=_streaming,
+            storage_options=_so,
             **dataset_args,
         )
         # If no validation data is there, validation_split_percentage will be used to divide the dataset.
@@ -769,6 +791,8 @@ def get_hf_datasets_wip(
                 split=f"{train_split_name}[:{data_args.validation_split_percentage}%]",
                 cache_dir=cache_dir,
                 token=token,
+                streaming=_streaming,
+                storage_options=_so,
                 **dataset_args,
             )
             raw_datasets[train_split_name] = datasets.load_dataset(  # type:ignore
@@ -777,6 +801,8 @@ def get_hf_datasets_wip(
                 split=f"{train_split_name}[{data_args.validation_split_percentage}%:]",
                 cache_dir=cache_dir,
                 token=token,
+                streaming=_streaming,
+                storage_options=_so,
                 **dataset_args,
             )
 

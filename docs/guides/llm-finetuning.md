@@ -317,6 +317,129 @@ Largest config — `agpt-20b` (~20B, 256k vocab), higher TP:
     `WORLD_SIZE / (dp_replicate * tp)`. For pure HSDP, set `--dp-replicate > 1`
     (e.g. one replica per node, sharded within).
 
+---
+
+## Streaming from remote storage via `globusfs`
+
+When your training data lives on a Globus collection (e.g. Eagle) but you
+are training on a different machine (Aurora, Polaris, Sophia, or off-ALCF),
+`ezpz` can stream directly over the network instead of staging with
+`globus transfer`.
+
+This is powered by [`globusfs`](https://github.com/saforem2/globusfs) — an
+`fsspec` filesystem for Globus — wired into `ezpz`'s HuggingFace streaming
+path via `storage_options`.
+
+### When to use it
+
+| Scenario | Verdict |
+|---|---|
+| Polaris reading Eagle (`/eagle` already mounted) | **Don't stream** — local POSIX is faster |
+| Aurora / Sophia reading Eagle, single epoch | **Stream** — avoids 1-12 h double-hop staging |
+| < 100 GB, any machine, single epoch | **Stream** — staging overhead dominates |
+| > 5 TB or > 2 epochs | **Stage** — HTTPS gateway caps at ~2-5 GB/s shared |
+| Live instrument data landing during experiment | **Stream** — only option |
+
+For large multi-epoch runs, stage once with `globus transfer` and read
+locally. Streaming shines for eval, few-shot fine-tuning, and single-pass
+continued pretraining.
+
+### Setup
+
+```bash
+# Install globusfs into your ezpz environment
+uv pip install -e /path/to/globusfs   # or: pip install globusfs
+```
+
+### Public collection (no auth) — works immediately
+
+The [ISAAC](https://github.com/saforem2/globusfs#known-alcf-collections)
+public collection needs no login:
+
+```python
+from datasets import load_dataset
+
+ds = load_dataset(
+    "parquet",
+    data_files="globus://isaac/ability/ALL_2007-01.parquet",
+    split="train",
+    streaming=True,
+    storage_options={
+        "collection_id": "isaac",
+        "https_url": "https://g-05a4b6.2d513.8443.data.globus.org",
+    },
+)
+for batch in ds.iter(batch_size=4):
+    train_step(batch)
+```
+
+Or via `ezpz`'s `HfDataTrainingArguments`:
+
+```python
+from ezpz.configs import HfDataTrainingArguments
+from ezpz.data.hf import get_hf_datasets
+
+args = HfDataTrainingArguments(
+    train_file="globus://isaac/ability/ALL_2007-01.parquet",
+    streaming=True,
+    storage_options={
+        "collection_id": "isaac",
+        "https_url": "https://g-05a4b6.2d513.8443.data.globus.org",
+    },
+)
+```
+
+From the CLI (JSON string form):
+
+```bash
+ezpz launch python3 -m ezpz.examples.hf_trainer \
+    --train_file globus://isaac/ability/ALL_2007-01.parquet \
+    --streaming \
+    --storage_options '{"collection_id": "isaac", "https_url": "https://g-05a4b6.2d513.8443.data.globus.org"}' \
+    ...
+```
+
+### Authenticated collection (Eagle, other ALCF endpoints)
+
+```bash
+# One-time login on the head node — tokens go to a shared filesystem path
+python -c "import globusfs; globusfs.login('alcf#dtn_eagle', token_path='/eagle/projects/MyProj/.globus-tokens.json')"
+```
+
+Then every rank reads the same `token_path`:
+
+```python
+args = HfDataTrainingArguments(
+    train_file="globus://05d2c76a-e867-4f67-aa57-76edeb0beda0/my-dataset/train-00000.parquet",
+    streaming=True,
+    storage_options={"token_path": "/eagle/projects/MyProj/.globus-tokens.json"},
+)
+```
+
+!!! warning "Token expiry"
+    ALCF High Assurance sessions expire after ~1 h. For long runs, set
+    `request_refresh_tokens=True` at login so workers can silently refresh.
+    Without it the job dies mid-epoch with a `SessionExpiredError`.
+
+### Limitations
+
+- **Single explicit files only** — anonymous HTTPS has no directory listing,
+  so `globus://isaac/ability/*.parquet` needs Transfer API (`metadata=`);
+  list files explicitly or stage first for glob patterns.
+- **Parquet row-group granularity** — index row groups, not individual
+  records, to amortize the HTTP round-trip. Per-record access over a
+  wide-area link is one round-trip per record.
+- **No `ArrayRecord`** — its C++ reader can't route through Python `fsspec`;
+  use parquet or a Python-level reader.
+- **Streaming is `IterableDataset`** — no `DistributedSampler`; shard with
+  `dataset.shard(num_shards=world_size, index=rank)` instead.
+
+### See also
+
+- [`globusfs` README](https://github.com/saforem2/globusfs) — architecture,
+  all known ALCF collections, and the `grain` row-group pattern.
+- [Live smoke test](https://github.com/saforem2/ezpz/blob/main/tests/test_globus_streaming.py) — mocked unit tests + ISAAC integration.
+
 **Fine-tune an arbitrary HF model via `fsdp_tp`** — pass a repo id (with a
 `/`) as `--model`. Loads real HF weights under FSDP2 (TP is forced off, so
 drop `--tp`); the same memory levers apply:
