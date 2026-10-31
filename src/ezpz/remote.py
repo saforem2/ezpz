@@ -83,7 +83,11 @@ _KNOWN_HOSTS = frozenset(REMOTE_SCHEDULERS) | IRI_MACHINES
 def looks_like_host(s: str) -> bool:
     """Heuristic: does bare token look like a remote host alias?"""
     low = s.lower().split(".")[0].split("-")[0]
-    return low in _KNOWN_HOSTS or s.lower() in REMOTE_SCHEDULERS or s.lower() in IRI_MACHINES
+    return (
+        low in _KNOWN_HOSTS
+        or s.lower() in REMOTE_SCHEDULERS
+        or s.lower() in IRI_MACHINES
+    )
 
 
 def looks_like_job_id(s: str) -> bool:
@@ -194,7 +198,9 @@ def submit_via_ssh(
         "try another backend".
     """
     sched = (scheduler or scheduler_for(host)).upper()
-    submit_cmd = "/opt/pbs/bin/qsub" if sched == "PBS" else "/opt/pbs/bin/sbatch"
+    submit_cmd = (
+        "/opt/pbs/bin/qsub" if sched == "PBS" else "/opt/pbs/bin/sbatch"
+    )
     path = remote_path or "~/.ezpz-remote-job.sh"
 
     # Write via stdin, then submit. `cat >` rather than scp keeps this to
@@ -291,8 +297,12 @@ def submit_via_iri(
                 "filesystems": filesystems or "home",
             },
         },
-        "stdout_path": f"{workdir}/ezpz-iri.out" if workdir else "/tmp/ezpz-iri.out",
-        "stderr_path": f"{workdir}/ezpz-iri.err" if workdir else "/tmp/ezpz-iri.err",
+        "stdout_path": f"{workdir}/ezpz-iri.out"
+        if workdir
+        else "/tmp/ezpz-iri.out",
+        "stderr_path": f"{workdir}/ezpz-iri.err"
+        if workdir
+        else "/tmp/ezpz-iri.err",
     }
 
     import json
@@ -509,11 +519,15 @@ def submit_remote(
 # ── IRI status / cancel (verified against live OpenAPI at /openapi.json) ──
 
 
-def get_job_status_via_iri(host: str, job_id: str, *, historical: bool = True) -> RemoteJobStatus:
+def get_job_status_via_iri(
+    host: str, job_id: str, *, historical: bool = True
+) -> RemoteJobStatus:
     """Fetch one job's status via IRI GET /compute/status/{rid}/{job_id}."""
     token = _iri_token()
     h = host.lower()
-    resource_id = next((rid for n, rid in IRI_RESOURCE_IDS.items() if h.startswith(n)), None) or _resolve_resource_id(host, token)
+    resource_id = next(
+        (rid for n, rid in IRI_RESOURCE_IDS.items() if h.startswith(n)), None
+    ) or _resolve_resource_id(host, token)
     import json as _json
     import urllib.error as _ue
     import urllib.request as _ur
@@ -528,20 +542,44 @@ def get_job_status_via_iri(host: str, job_id: str, *, historical: bool = True) -
         with _ur.urlopen(req, timeout=30) as resp:
             body = _json.loads(resp.read().decode())
     except _ue.HTTPError as exc:
-        detail = exc.read().decode(errors="replace")[:500] if hasattr(exc, "read") else str(exc)
+        detail = (
+            exc.read().decode(errors="replace")[:500]
+            if hasattr(exc, "read")
+            else str(exc)
+        )
         raise RemoteSubmitError(f"IRI status {exc.code}: {detail}") from exc
     except (TimeoutError, OSError) as exc:
         raise RemoteSubmitError(f"IRI status timeout: {exc}") from exc
     st = body.get("status") or {}
     jspec = body.get("job_spec") or {}
-    return RemoteJobStatus(job_id=body.get("id", job_id), state=st.get("state", "unknown"), exit_code=st.get("exit_code"), queue=(jspec.get("attributes") or {}).get("queue_name"), account=(jspec.get("attributes") or {}).get("account"), raw=body, name=body.get("name") or jspec.get("name") or "", stdout_path=jspec.get("stdout_path") or body.get("stdout_path") or "", stderr_path=jspec.get("stderr_path") or body.get("stderr_path") or "")
+    return RemoteJobStatus(
+        job_id=body.get("id", job_id),
+        state=st.get("state", "unknown"),
+        exit_code=st.get("exit_code"),
+        queue=(jspec.get("attributes") or {}).get("queue_name"),
+        account=(jspec.get("attributes") or {}).get("account"),
+        raw=body,
+        name=body.get("name") or jspec.get("name") or "",
+        stdout_path=jspec.get("stdout_path") or body.get("stdout_path") or "",
+        stderr_path=jspec.get("stderr_path") or body.get("stderr_path") or "",
+    )
 
 
-def list_jobs_via_iri(host: str, *, historical: bool = True, limit: int = 20, queue: str | None = None, owner: str | None = None, states: list[str] | None = None) -> list[RemoteJobStatus]:
+def list_jobs_via_iri(
+    host: str,
+    *,
+    historical: bool = True,
+    limit: int = 20,
+    queue: str | None = None,
+    owner: str | None = None,
+    states: list[str] | None = None,
+) -> list[RemoteJobStatus]:
     """List jobs via IRI POST /compute/status/{rid}."""
     token = _iri_token()
     h = host.lower()
-    resource_id = next((rid for n, rid in IRI_RESOURCE_IDS.items() if h.startswith(n)), None) or _resolve_resource_id(host, token)
+    resource_id = next(
+        (rid for n, rid in IRI_RESOURCE_IDS.items() if h.startswith(n)), None
+    ) or _resolve_resource_id(host, token)
     import json as _json
     import urllib.error as _ue
     import urllib.request as _ur
@@ -555,73 +593,513 @@ def list_jobs_via_iri(host: str, *, historical: bool = True, limit: int = 20, qu
         payload["queue"] = queue
     if owner:
         payload["owner"] = owner
-    req = _ur.Request(url, data=_json.dumps(payload).encode(), headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, method="POST")
+    req = _ur.Request(
+        url,
+        data=_json.dumps(payload).encode(),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
     try:
         with _ur.urlopen(req, timeout=30) as resp:
             body = _json.loads(resp.read().decode())
     except _ue.HTTPError as exc:
-        detail = exc.read().decode(errors="replace")[:500] if hasattr(exc, "read") else str(exc)
+        detail = (
+            exc.read().decode(errors="replace")[:500]
+            if hasattr(exc, "read")
+            else str(exc)
+        )
         raise RemoteSubmitError(f"IRI list {exc.code}: {detail}") from exc
     except (TimeoutError, OSError) as exc:
         raise RemoteSubmitError(f"IRI list timeout: {exc}") from exc
-    jobs = body if isinstance(body, list) else body.get("jobs") or body.get("data") or []
+    jobs = (
+        body
+        if isinstance(body, list)
+        else body.get("jobs") or body.get("data") or []
+    )
     out = []
     for j in jobs:
         st = j.get("status") or {}
         jspec = j.get("job_spec") or {}
-        jattr = (jspec.get("attributes") or {})
-        out.append(RemoteJobStatus(job_id=j.get("id", ""), state=st.get("state", "unknown"), exit_code=st.get("exit_code"), queue=jattr.get("queue_name"), account=jattr.get("account"), raw=j, name=j.get("name") or jspec.get("name") or "", stdout_path=jspec.get("stdout_path") or j.get("stdout_path") or "", stderr_path=jspec.get("stderr_path") or j.get("stderr_path") or ""))
+        jattr = jspec.get("attributes") or {}
+        out.append(
+            RemoteJobStatus(
+                job_id=j.get("id", ""),
+                state=st.get("state", "unknown"),
+                exit_code=st.get("exit_code"),
+                queue=jattr.get("queue_name"),
+                account=jattr.get("account"),
+                raw=j,
+                name=j.get("name") or jspec.get("name") or "",
+                stdout_path=jspec.get("stdout_path")
+                or j.get("stdout_path")
+                or "",
+                stderr_path=jspec.get("stderr_path")
+                or j.get("stderr_path")
+                or "",
+            )
+        )
     return out
+
+
+def _pbs_json_to_status(
+    jid: str, info: dict, *, host: str = ""
+) -> RemoteJobStatus:
+    """Convert one PBS ``qstat -f -F json`` ``Jobs[jid]`` dict to :class:`RemoteJobStatus`.
+
+    Mirrors the field extraction in ``qmert`` (``/home/foremans/.local/bin/qmert``):
+    queue, walltime, nodes, elapsed, comment/note, exec_host.
+    """
+    state_raw: str = str(
+        info.get("job_state") or info.get("state") or "unknown"
+    ).strip()
+    # Normalise PBS single-letter → IRI-style long form so existing renderers work.
+    _pbs_state_map = {
+        "R": "active",
+        "Q": "queued",
+        "H": "held",
+        "E": "active",  # exiting — still on nodes, treat as active
+        "F": "completed",
+        "U": "held",  # suspended
+        "X": "completed",  # transit; rare
+        "B": "active",  # Array job begining
+    }
+    state = _pbs_state_map.get(state_raw, state_raw).lower()
+
+    rl = info.get("Resource_List", {}) or {}
+    name = str(info.get("Job_Name") or "").strip()
+    queue = str(info.get("queue") or "").strip() or None
+    account = (
+        str(info.get("Account_Name") or info.get("project") or "").strip()
+        or None
+    )
+    walltime = str(rl.get("walltime") or "").strip() or None
+    nodes_val = rl.get("nodect")
+    if nodes_val is None:
+        nodes_val = rl.get("nodes")
+        # nodes may be a hostname string (e.g. "x4002c2s0b0n0") for interactive jobs
+        if isinstance(nodes_val, str) and not nodes_val.isdigit():
+            nodes_val = None
+    try:
+        nodes = int(nodes_val) if nodes_val is not None else None
+    except (TypeError, ValueError):
+        nodes = None
+
+    ru = info.get("resources_used", {}) or {}
+    elapsed = str(ru.get("walltime") or "").strip() or None
+
+    note = str(info.get("comment") or "").strip() or None
+    if note and note.lower().startswith("not running:"):
+        note = note[len("Not Running:") :].strip()
+
+    raw_host = str(info.get("exec_host") or info.get("exec_vnode") or "")
+    exec_hosts: list[str] | None = None
+    if raw_host:
+        hosts: list[str] = []
+        for chunk in raw_host.replace("+", " ").split():
+            h = chunk.split("/")[0].split(".")[0].split(":")[0].strip("()")
+            if h and h not in hosts:
+                hosts.append(h)
+        exec_hosts = hosts if hosts else None
+
+    owner_field = str(info.get("Job_Owner") or info.get("euser") or "")
+    owner = (
+        owner_field.split("@")[0]
+        if "@" in owner_field
+        else (owner_field or None)
+    )
+
+    return RemoteJobStatus(
+        job_id=jid,
+        state=state,
+        exit_code=None,
+        queue=queue,
+        account=account,
+        owner=owner,
+        raw={"_pbs": info, "_fanout_host": host} if host else {"_pbs": info},
+        name=name,
+        nodes=nodes,
+        walltime=walltime,
+        elapsed=elapsed,
+        note=note,
+        exec_hosts=exec_hosts,
+    )
+
+
+def _ssh_remote_user(host: str) -> str | None:
+    """Resolve the SSH user for *host* from ``ssh -G`` (respects ``~/.ssh/config``)."""
+    import subprocess as _spu
+
+    try:
+        proc = _spu.run(
+            ["ssh", "-G", host], capture_output=True, text=True, timeout=5
+        )
+        if proc.returncode == 0:
+            for line in proc.stdout.splitlines():
+                if line.lower().startswith("user "):
+                    val = line.split(None, 1)[1].strip() if " " in line else ""
+                    return val or None
+    except Exception:
+        pass
+    return None
+
+
+def resolve_remote_owner(host: str) -> str | None:
+    """Owner to filter remote jobs on *host*.
+
+    Prefers the ``User`` from ``~/.ssh/config`` (``ssh -G HOST``) — e.g.
+    ``foremans`` on ``aurora`` even when the local macOS login is ``sam``.
+    Falls back to :func:`getpass.getuser` only when no SSH entry exists
+    (custom hostname) or ``ssh`` is unavailable.
+    """
+    user = _ssh_remote_user(host)
+    if user:
+        return user
+    try:
+        import getpass
+
+        return getpass.getuser()
+    except Exception:
+        return None
+
+
+def list_jobs_via_ssh(
+    host: str,
+    *,
+    historical: bool = False,
+    limit: int = 20,
+    owner: str | None = None,
+) -> list[RemoteJobStatus]:
+    """List jobs via SSH bulk ``qselect`` + ``qstat -f -F json`` (qmert path).
+
+    One SSH call for IDs, one for the JSON dump — no per-job ``qstat -xf``.
+    Identical fidelity to ``qmert``: full ``NODES``/``WALL``/``JOBNAME``/``NOTE``
+    columns and running-job nodelists, all in the bulk payload.
+
+    Falls back to ``qstat -x`` text-table parsing when JSON is unavailable,
+    preserving existing ``limit``/``owner`` semantics.
+
+    Args:
+        host: SSH destination.
+        historical: Include completed/exiting history (``qstat -x``).
+        limit: Max jobs when text-table fallback is used (ignored for JSON bulk).
+        owner: Filter to this local user (``qselect -u``). ``None`` → all jobs.
+
+    Returns:
+        A list of :class:`RemoteJobStatus` sorted ``R`` → ``Q`` → ``H``.
+        Empty list when the user has no matching jobs (same as ``qmert``).
+
+    Raises:
+        RemoteSubmitError: When SSH itself fails (exit 255) or the JSON dump
+            cannot be parsed and the text fallback also fails.
+    """
+    import json as _js
+    import shlex as _sx
+    import subprocess as _sp
+
+    # ── 1. Resolve IDs with qselect (scoped to owner, avoids whole-cluster JSON) ──
+    qselect_arg = f" -u {_sx.quote(owner)}" if owner else ""
+    xflag = " -x" if historical else ""
+    argv_sel = [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        host,
+        f"/opt/pbs/bin/qselect{qselect_arg}{xflag} 2>/dev/null",
+    ]
+    proc_sel = _sp.run(argv_sel, capture_output=True, text=True, timeout=15)
+    if proc_sel.returncode == 255:
+        raise RemoteSubmitError(
+            f"ssh transport 255 to {host}: {proc_sel.stderr.strip()}"
+        )
+    ids = [
+        ln.strip() for ln in (proc_sel.stdout or "").splitlines() if ln.strip()
+    ]
+    # Fallback: if qselect returned nothing, try bare qstat JSON (covers edge where
+    # qselect filters out jobs we own cross-site, and matches qmert's pre-filter)
+    if not ids:
+        # Empty means no jobs — don't fall through to full-cluster dump.
+        return []
+
+    # ── 2. Bulk JSON dump: one SSH hop carries every column + note + nodelist ──
+    # Pass IDs as separate qstat args (qselect → qstat positional). This avoids
+    # a whole-cluster dump where a single malformed other-user record can poison
+    # json.load() and silently drop us to the text fallback — qmert's first fix.
+    # --all-users on aurora is 500+ jobs: bulk JSON with that many IDs times
+    # out (server-side serialization). Fall back to text table for that case,
+    # which streams in one `qstat` without per-job JSON expansion.
+    if owner is None and len(ids) > 60:
+        # Don't attempt bulk JSON — jump straight to text-table path below.
+        # Keep ids=None sentinel so the fallback knows this was intentional.
+        ids = []  # empty → skip JSON attempt, fall through to text path
+        _skip_json = True
+    else:
+        _skip_json = False
+        _MAX_BULK = 120
+        truncated = len(ids) > _MAX_BULK
+        if truncated:
+            ids = ids[:_MAX_BULK]
+        qids = " ".join(_sx.quote(j) for j in ids)
+    if not _skip_json:
+        argv_js = [
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            host,
+            f"/opt/pbs/bin/qstat -f -F json {qids} 2>/dev/null",
+        ]
+        proc_js = _sp.run(
+            argv_js,
+            capture_output=True,
+            text=True,
+            timeout=30 if truncated else 20,
+        )
+        if (
+            proc_js.returncode != 255
+            and proc_js.stdout
+            and proc_js.stdout.strip().startswith("{")
+        ):
+            try:
+                data = _js.loads(proc_js.stdout)
+                jobs_raw: dict = data.get("Jobs") or {}
+                out: list[RemoteJobStatus] = []
+                for jid, info in jobs_raw.items():
+                    try:
+                        out.append(_pbs_json_to_status(jid, info, host=host))
+                    except Exception:
+                        continue
+                # Apply qmert ordering: R before E before Q before H, then by id.
+                order = {"active": 0, "running": 0, "queued": 2, "held": 3}
+                out.sort(
+                    key=lambda j: (order.get(j.state.lower(), 4), j.job_id)
+                )
+                if out:
+                    return out
+                # JSON succeeded but yielded nothing — don't silently return empty;
+                # fall through to text path so we still show something.
+            except Exception:
+                pass  # fall through to text fallback
+
+    # ── 3. Text-table fallback (older PBS, or json load failure) ──
+    qstat_cmd = "/opt/pbs/bin/qstat -x" if historical else "/opt/pbs/bin/qstat"
+    argv_txt = ["ssh", "-o", "BatchMode=yes", host, qstat_cmd]
+    proc_txt = _sp.run(argv_txt, capture_output=True, text=True, timeout=15)
+    if proc_txt.returncode == 255:
+        raise RemoteSubmitError(
+            f"ssh transport 255 to {host}: {proc_txt.stderr.strip()}"
+        )
+    if proc_txt.returncode != 0 or not proc_txt.stdout.strip():
+        return []
+    out_txt: list[RemoteJobStatus] = []
+    for line in proc_txt.stdout.splitlines():
+        line = line.strip()
+        if not line or line.startswith("Job id") or line.startswith("----"):
+            continue
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        if owner and len(parts) >= 3 and parts[2] != owner:
+            continue
+        jid = parts[0].rstrip("*")
+        if "." in jid:
+            jid = jid.split(".")[0]
+        qname = parts[-1] if len(parts) >= 2 else ""
+        st = parts[-2] if len(parts) >= 3 else ""
+        nm = parts[1] if len(parts) >= 2 else ""
+        usr = parts[2] if len(parts) >= 3 else ""
+        if owner and usr != owner:
+            continue
+        out_txt.append(
+            RemoteJobStatus(
+                job_id=jid,
+                state=st,
+                queue=qname,
+                raw={"name": nm, "_fanout_host": host},
+                owner=usr,
+                name=nm,
+            )
+        )
+        if limit and len(out_txt) >= limit:
+            break
+    return out_txt
+
+
+def get_job_status_via_ssh(
+    host: str, job_id: str, *, historical: bool = True
+) -> RemoteJobStatus:
+    """Fetch one job via SSH ``qstat -f -F json`` — rich fields, no bulk indirection."""
+    import json as _js2
+    import shlex as _sx2
+    import subprocess as _sp2
+
+    argv = [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        host,
+        f"/opt/pbs/bin/qstat -f -F json {_sx2.quote(job_id)} 2>/dev/null",
+    ]
+    proc = _sp2.run(argv, capture_output=True, text=True, timeout=15)
+    if proc.returncode == 255:
+        raise RemoteSubmitError(
+            f"ssh transport 255 to {host}: {proc.stderr.strip()}"
+        )
+    if proc.stdout and proc.stdout.strip().startswith("{"):
+        try:
+            data = _js2.loads(proc.stdout)
+            jobs = data.get("Jobs") or {}
+            if jobs:
+                # PBS keys include FQDN suffix; match the first entry.
+                jid, info = next(iter(jobs.items()))
+                return _pbs_json_to_status(jid, info, host=host)
+        except Exception:
+            pass
+    # Fallback: plain qstat text for this job (covers historical where -f json
+    # may not include F/E records on older PBS).
+    cmd = (
+        f"/opt/pbs/bin/qstat -x {job_id}"
+        if historical
+        else f"/opt/pbs/bin/qstat {job_id}"
+    )
+    argv2 = [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        host,
+        _sx2.quote(cmd) if False else cmd,
+    ]
+    # Build without shell quoting so FQDN dots aren't mangled: join into single remote command.
+    argv2 = ["ssh", "-o", "BatchMode=yes", host, cmd]
+    proc2 = _sp2.run(argv2, capture_output=True, text=True, timeout=15)
+    if proc2.returncode != 0 or not proc2.stdout.strip():
+        err = (proc2.stderr or proc2.stdout or "job not found").strip()
+        raise RemoteSubmitError(err[:400])
+    # Parse single-line summary
+    for line in proc2.stdout.splitlines():
+        line = line.strip()
+        if not line or line.startswith("Job id") or line.startswith("----"):
+            continue
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        jid = parts[0].rstrip("*")
+        if "." in jid:
+            jid = jid.split(".")[0]
+        qname = parts[-1] if len(parts) >= 2 else ""
+        st = parts[-2] if len(parts) >= 3 else ""
+        nm = parts[1] if len(parts) >= 2 else ""
+        usr = parts[2] if len(parts) >= 3 else ""
+        return RemoteJobStatus(
+            job_id=jid,
+            state=st,
+            queue=qname,
+            raw={"name": nm, "_fanout_host": host},
+            owner=usr,
+            name=nm,
+        )
+    raise RemoteSubmitError(f"could not parse status for {job_id}")
 
 
 def cancel_via_iri(host: str, job_id: str) -> RemoteJobStatus:
     """Cancel via IRI DELETE /compute/cancel/{rid}/{job_id} (204 on success)."""
     token = _iri_token()
     h = host.lower()
-    resource_id = next((rid for n, rid in IRI_RESOURCE_IDS.items() if h.startswith(n)), None) or _resolve_resource_id(host, token)
+    resource_id = next(
+        (rid for n, rid in IRI_RESOURCE_IDS.items() if h.startswith(n)), None
+    ) or _resolve_resource_id(host, token)
     import urllib.error as _ue
     import urllib.request as _ur
 
     url = f"https://api.alcf.anl.gov/api/v1/compute/cancel/{resource_id}/{urllib.parse.quote(job_id, safe='')}"
-    req = _ur.Request(url, headers={"Authorization": f"Bearer {token}"}, method="DELETE")
+    req = _ur.Request(
+        url, headers={"Authorization": f"Bearer {token}"}, method="DELETE"
+    )
     try:
         with _ur.urlopen(req, timeout=30) as resp:
             # 204 has no body
             if resp.status in (200, 204):
-                return RemoteJobStatus(job_id=job_id, state="canceled", raw={"via": "iri"})
+                return RemoteJobStatus(
+                    job_id=job_id, state="canceled", raw={"via": "iri"}
+                )
     except _ue.HTTPError as exc:
-        detail = exc.read().decode(errors="replace")[:500] if hasattr(exc, "read") else str(exc)
+        detail = (
+            exc.read().decode(errors="replace")[:500]
+            if hasattr(exc, "read")
+            else str(exc)
+        )
         raise RemoteSubmitError(f"IRI cancel {exc.code}: {detail}") from exc
     raise RemoteSubmitError("IRI cancel: unexpected response")
 
 
-def cancel_via_ssh(host: str, job_id: str, *, scheduler: str | None = None) -> RemoteJobStatus:
+def cancel_via_ssh(
+    host: str, job_id: str, *, scheduler: str | None = None
+) -> RemoteJobStatus:
     """Cancel via SSH qdel/scancel."""
     import shlex as _shlex
     import subprocess as _sp
 
     sched = (scheduler or scheduler_for(host)).upper()
-    cmd = f"/opt/pbs/bin/qdel {_shlex.quote(job_id)}" if sched == "PBS" else f"scancel {_shlex.quote(job_id)}"
+    cmd = (
+        f"/opt/pbs/bin/qdel {_shlex.quote(job_id)}"
+        if sched == "PBS"
+        else f"scancel {_shlex.quote(job_id)}"
+    )
     argv = ["ssh", "-o", "BatchMode=yes", host, cmd]
     proc = _sp.run(argv, capture_output=True, text=True, timeout=30)
     if proc.returncode == 0:
-        return RemoteJobStatus(job_id=job_id, state="canceled", raw={"via": "ssh", "stdout": proc.stdout})
-    raise RemoteSubmitError(f"cancel failed (exit {proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}")
+        return RemoteJobStatus(
+            job_id=job_id,
+            state="canceled",
+            raw={"via": "ssh", "stdout": proc.stdout},
+        )
+    raise RemoteSubmitError(
+        f"cancel failed (exit {proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}"
+    )
 
 
-
-
-def update_via_iri(host: str, job_id: str, *, duration_seconds: int | None = None, queue: str | None = None, account: str | None = None, name: str | None = None, node_count: int | None = None, filesystems: str | None = None) -> RemoteJobStatus:
+def update_via_iri(
+    host: str,
+    job_id: str,
+    *,
+    duration_seconds: int | None = None,
+    queue: str | None = None,
+    account: str | None = None,
+    name: str | None = None,
+    node_count: int | None = None,
+    filesystems: str | None = None,
+) -> RemoteJobStatus:
     """PUT /api/v1/compute/job/{rid}/{jid} — body is JobSpec-Input."""
-    if not any(v is not None for v in (duration_seconds, queue, account, name, node_count, filesystems)):
-        raise ValueError("nothing to update: pass duration_seconds/queue/account/...")
+    if not any(
+        v is not None
+        for v in (
+            duration_seconds,
+            queue,
+            account,
+            name,
+            node_count,
+            filesystems,
+        )
+    ):
+        raise ValueError(
+            "nothing to update: pass duration_seconds/queue/account/..."
+        )
     if not has_iri_backend(host):
-        raise RemoteSubmitError(f"{host!r} not served by IRI (supports {', '.join(sorted(IRI_MACHINES))})")
+        raise RemoteSubmitError(
+            f"{host!r} not served by IRI (supports {', '.join(sorted(IRI_MACHINES))})"
+        )
     if duration_seconds is not None and duration_seconds < 1:
         raise ValueError("duration_seconds must be >=1")
     token = _iri_token()
-    rid = next((v for k, v in IRI_RESOURCE_IDS.items() if host.lower().startswith(k)), None) or _resolve_resource_id(host, token)
-    import json as _json2, urllib.error as _ue2, urllib.request as _ur2
+    rid = next(
+        (v for k, v in IRI_RESOURCE_IDS.items() if host.lower().startswith(k)),
+        None,
+    ) or _resolve_resource_id(host, token)
+    import json as _json2
+    import urllib.error as _ue2
+    import urllib.request as _ur2
+
     attrs: dict = {}
     if duration_seconds is not None:
         attrs["duration"] = duration_seconds
@@ -639,60 +1117,152 @@ def update_via_iri(host: str, job_id: str, *, duration_seconds: int | None = Non
     if attrs:
         payload["attributes"] = attrs
     url = f"https://api.alcf.anl.gov/api/v1/compute/job/{rid}/{urllib.parse.quote(job_id, safe='')}"
-    req = _ur2.Request(url, data=_json2.dumps(payload).encode(), headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, method="PUT")
+    req = _ur2.Request(
+        url,
+        data=_json2.dumps(payload).encode(),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        method="PUT",
+    )
     logger.info("IRI updateJob %s on %s: %s", job_id, host, payload)
     try:
         with _ur2.urlopen(req, timeout=60) as resp:
-            body = _json2.loads(resp.read().decode()) if getattr(resp, "length", 1) != 0 else {}
+            body = (
+                _json2.loads(resp.read().decode())
+                if getattr(resp, "length", 1) != 0
+                else {}
+            )
     except _ue2.HTTPError as exc:
-        detail = exc.read().decode(errors="replace")[:600] if hasattr(exc, "read") else str(exc)
+        detail = (
+            exc.read().decode(errors="replace")[:600]
+            if hasattr(exc, "read")
+            else str(exc)
+        )
         if exc.code == 401:
-            raise RemoteSubmitError(f"IRI update 401 (token expired?): {detail}") from exc
+            raise RemoteSubmitError(
+                f"IRI update 401 (token expired?): {detail}"
+            ) from exc
         raise RemoteSubmitError(f"IRI update {exc.code}: {detail}") from exc
     except _ue2.URLError as exc:
         raise RemoteSubmitError(f"IRI update network: {exc.reason}") from exc
     st = body.get("status") or {}
     jspec = body.get("job_spec") or {}
-    jattr = (jspec.get("attributes") or {})
-    return RemoteJobStatus(job_id=body.get("id", job_id), state=st.get("state", "unknown"), exit_code=st.get("exit_code"), queue=jattr.get("queue_name", queue), account=jattr.get("account", account), raw=body)
+    jattr = jspec.get("attributes") or {}
+    return RemoteJobStatus(
+        job_id=body.get("id", job_id),
+        state=st.get("state", "unknown"),
+        exit_code=st.get("exit_code"),
+        queue=jattr.get("queue_name", queue),
+        account=jattr.get("account", account),
+        raw=body,
+    )
 
 
-def update_via_ssh(host: str, job_id: str, *, duration_seconds: int | None = None, queue: str | None = None, account: str | None = None, scheduler: str | None = None) -> RemoteJobStatus:
-    import shlex as _shlex2, subprocess as _sp2
+def update_via_ssh(
+    host: str,
+    job_id: str,
+    *,
+    duration_seconds: int | None = None,
+    queue: str | None = None,
+    account: str | None = None,
+    scheduler: str | None = None,
+) -> RemoteJobStatus:
+    import shlex as _shlex2
+    import subprocess as _sp2
+
     sched = (scheduler or scheduler_for(host)).upper()
     parts = []
     if duration_seconds is not None:
-        h, m, s = duration_seconds // 3600, (duration_seconds % 3600) // 60, duration_seconds % 60
+        h, m, s = (
+            duration_seconds // 3600,
+            (duration_seconds % 3600) // 60,
+            duration_seconds % 60,
+        )
         wl = f"{h:02d}:{m:02d}:{s:02d}"
-        parts.append(f"-l walltime={_shlex2.quote(wl)}" if sched == "PBS" else f"--time={_shlex2.quote(wl)}")
+        parts.append(
+            f"-l walltime={_shlex2.quote(wl)}"
+            if sched == "PBS"
+            else f"--time={_shlex2.quote(wl)}"
+        )
     if queue is not None:
-        parts.append(f"-q {_shlex2.quote(queue)}" if sched == "PBS" else f"-p {_shlex2.quote(queue)}")
+        parts.append(
+            f"-q {_shlex2.quote(queue)}"
+            if sched == "PBS"
+            else f"-p {_shlex2.quote(queue)}"
+        )
     if account is not None:
         parts.append(f"-A {_shlex2.quote(account)}")
     if not parts:
         raise ValueError("nothing to update")
-    cmd = ("qalter" if sched == "PBS" else "scontrol update JobId=") + " " + " ".join(parts) + f" {_shlex2.quote(job_id)}" if sched == "PBS" else f"scontrol update JobId={_shlex2.quote(job_id)} " + " ".join(parts)
+    cmd = (
+        ("qalter" if sched == "PBS" else "scontrol update JobId=")
+        + " "
+        + " ".join(parts)
+        + f" {_shlex2.quote(job_id)}"
+        if sched == "PBS"
+        else f"scontrol update JobId={_shlex2.quote(job_id)} "
+        + " ".join(parts)
+    )
     argv = ["ssh", "-o", "BatchMode=yes", host, cmd]
     proc = _sp2.run(argv, capture_output=True, text=True, timeout=30)
     if proc.returncode == 0:
-        return RemoteJobStatus(job_id=job_id, state="queued", raw={"via": "ssh", "stdout": proc.stdout})
+        return RemoteJobStatus(
+            job_id=job_id,
+            state="queued",
+            raw={"via": "ssh", "stdout": proc.stdout},
+        )
     if proc.returncode == 255:
         raise RemoteSubmitError(f"ssh transport 255: {proc.stderr.strip()}")
-    raise RemoteSubmitError(f"update failed (exit {proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}")
+    raise RemoteSubmitError(
+        f"update failed (exit {proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}"
+    )
 
 
-def update_remote(host: str, job_id: str, *, backend: str = "auto", duration_seconds: int | None = None, queue: str | None = None, account: str | None = None, **kw) -> RemoteJobStatus:
+def update_remote(
+    host: str,
+    job_id: str,
+    *,
+    backend: str = "auto",
+    duration_seconds: int | None = None,
+    queue: str | None = None,
+    account: str | None = None,
+    **kw,
+) -> RemoteJobStatus:
     """Auto: IRI-first on IRI hosts, else SSH. 401/network falls back; 400/422 stop."""
     backend = backend.lower()
     if backend not in {"ssh", "iri", "auto"}:
-        raise RemoteSubmitError(f"unknown backend {backend!r} (expected ssh, iri or auto)")
+        raise RemoteSubmitError(
+            f"unknown backend {backend!r} (expected ssh, iri or auto)"
+        )
     if backend == "iri":
-        return update_via_iri(host, job_id, duration_seconds=duration_seconds, queue=queue, account=account, **kw)
+        return update_via_iri(
+            host,
+            job_id,
+            duration_seconds=duration_seconds,
+            queue=queue,
+            account=account,
+            **kw,
+        )
     if backend == "ssh":
-        return update_via_ssh(host, job_id, duration_seconds=duration_seconds, queue=queue, account=account)
+        return update_via_ssh(
+            host,
+            job_id,
+            duration_seconds=duration_seconds,
+            queue=queue,
+            account=account,
+        )
     if has_iri_backend(host):
         try:
-            return update_via_iri(host, job_id, duration_seconds=duration_seconds, queue=queue, account=account, **kw)
+            return update_via_iri(
+                host,
+                job_id,
+                duration_seconds=duration_seconds,
+                queue=queue,
+                account=account,
+                **kw,
+            )
         except RemoteSubmitError as exc:
             msg = str(exc)
             if "not served" in msg:
@@ -702,17 +1272,33 @@ def update_remote(host: str, job_id: str, *, backend: str = "auto", duration_sec
             if " 400" in msg or " 422" in msg:
                 raise
             logger.warning("IRI update failed (%s), falling back to SSH", msg)
-    return update_via_ssh(host, job_id, duration_seconds=duration_seconds, queue=queue, account=account)
+    return update_via_ssh(
+        host,
+        job_id,
+        duration_seconds=duration_seconds,
+        queue=queue,
+        account=account,
+    )
 
 
 def _iri_get(path: str, token: str, timeout: int = 30):
-    import json as _jg, urllib.error as _ueg, urllib.request as _urg
-    req = _urg.Request(f"https://api.alcf.anl.gov{path}", headers={"Authorization": f"Bearer {token}"})
+    import json as _jg
+    import urllib.error as _ueg
+    import urllib.request as _urg
+
+    req = _urg.Request(
+        f"https://api.alcf.anl.gov{path}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
     try:
         with _urg.urlopen(req, timeout=timeout) as r:
             return _jg.loads(r.read().decode())
     except _ueg.HTTPError as e:
-        detail = e.read().decode(errors="replace")[:600] if hasattr(e, "read") else str(e)
+        detail = (
+            e.read().decode(errors="replace")[:600]
+            if hasattr(e, "read")
+            else str(e)
+        )
         raise RemoteSubmitError(f"IRI GET {path} {e.code}: {detail}") from e
     except (TimeoutError, OSError) as e:
         raise RemoteSubmitError(f"IRI GET {path} unreachable: {e}") from e
@@ -728,7 +1314,9 @@ def get_all_resources(token: str | None = None, limit: int = 100):
     return _iri_get(f"/api/v1/status/resources?limit={limit}", tok)
 
 
-def list_incidents(resource_id: str | None = None, status: str | None = None, limit: int = 20):
+def list_incidents(
+    resource_id: str | None = None, status: str | None = None, limit: int = 20
+):
     tok = None
     try:
         tok = _iri_token()
@@ -744,7 +1332,9 @@ def list_incidents(resource_id: str | None = None, status: str | None = None, li
     headers = {"Accept": "application/json"}
     if tok:
         headers["Authorization"] = f"Bearer {tok}"
-    import json as _ji, urllib.request as _uri
+    import json as _ji
+    import urllib.request as _uri
+
     req = _uri.Request(f"https://api.alcf.anl.gov{path}", headers=headers)
     try:
         with _uri.urlopen(req, timeout=15) as r:
@@ -755,11 +1345,20 @@ def list_incidents(resource_id: str | None = None, status: str | None = None, li
         return body
     return body.get("incidents", body.get("data", body.get("events", [])))
 
-def cancel_remote(host: str, job_id: str, *, backend: str = "auto", scheduler: str | None = None) -> RemoteJobStatus:
+
+def cancel_remote(
+    host: str,
+    job_id: str,
+    *,
+    backend: str = "auto",
+    scheduler: str | None = None,
+) -> RemoteJobStatus:
     """Cancel with same auto-fallback rule as submit: 255 → IRI, else stop."""
     backend = backend.lower()
     if backend not in {"ssh", "iri", "auto"}:
-        raise RemoteSubmitError(f"unknown backend {backend!r} (expected ssh, iri or auto)")
+        raise RemoteSubmitError(
+            f"unknown backend {backend!r} (expected ssh, iri or auto)"
+        )
     if backend == "iri":
         return cancel_via_iri(host, job_id)
     # try SSH first
@@ -770,7 +1369,6 @@ def cancel_remote(host: str, job_id: str, *, backend: str = "auto", scheduler: s
             raise
         # auto: only fall back on transport failure (255) and IRI-capable host
         msg = str(exc)
-        is_transport = "255" in msg or "ssh" in msg.lower() and "transport" in msg.lower()
         # Heuristic: check if error came from SSH transport vs scheduler
         # cancel_via_ssh raises with scheduler stderr for scheduler rejections — do NOT fall back
         if "Unknown Job Id" in msg or "Invalid job" in msg:
