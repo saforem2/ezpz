@@ -413,21 +413,23 @@ def _status_fanout(
     import concurrent.futures
     from ezpz.remote import IRI_MACHINES, REMOTE_SCHEDULERS
 
-    if owner is None and not all_users:
-        try:
-            # For fanout, prefer the remote user when there's only one target-like
-            # default. Using local getuser() here is intentional — fanout is
-            # cross-host, so per-host SSH owner resolution happens inside _fetch_one.
-            import getpass
-
-            owner = getpass.getuser()
-        except Exception:
-            pass
-
     # All known hosts: IRI machines + every REMOTE_SCHEDULERS entry (dedup)
     hosts = sorted(set(REMOTE_SCHEDULERS) | set(IRI_MACHINES))
 
+    # When no explicit --owner, resolve per-host via ssh -G so
+    # "ezpz status" (no --remote) doesn't hide aurora jobs owned by
+    # "foremans" when local login is "sam". IRI + SSH text table both
+    # filter by owner server/client-side, so the wrong name = no rows.
+    _explicit_owner = owner
+    _per_host_owner: dict[str, str | None] = {}
+    if _explicit_owner is None and not all_users:
+        from ezpz.remote import resolve_remote_owner
+
+        for h in hosts:
+            _per_host_owner[h] = resolve_remote_owner(h)
+
     def _fetch_one(h: str):
+        eff_owner = _explicit_owner if _explicit_owner is not None else _per_host_owner.get(h)
         # Historical only makes sense for IRI; for SSH we just use qstat -x
         # For fan-out keep it simple: non-historical, per-host limit
         try:
@@ -439,7 +441,7 @@ def _status_fanout(
                     historical=historical,
                     limit=limit,
                     queue=queue,
-                    owner=owner,
+                    owner=eff_owner,
                     states=state_list(states) if states else None,
                 )
                 for j in jobs:
@@ -490,7 +492,7 @@ def _status_fanout(
                 parts = line.split()
                 if len(parts) < 4:
                     continue
-                if owner and len(parts) >= 3 and parts[2] != owner:
+                if eff_owner and len(parts) >= 3 and parts[2] != eff_owner:
                     continue
                 jid = parts[0].rstrip("*")
                 if "." in jid:
@@ -499,7 +501,7 @@ def _status_fanout(
                 st = parts[-2] if len(parts) >= 3 else ""
                 nm = parts[1] if len(parts) >= 2 else ""
                 usr = parts[2] if len(parts) >= 3 else ""
-                if owner and usr != owner:
+                if eff_owner and usr != eff_owner:
                     continue
                 jobs.append(
                     _RJS(
@@ -695,6 +697,7 @@ def _render_single(st, *, as_json: bool, via: str = ""):
                     "elapsed": getattr(st, "elapsed", None),
                     "note": getattr(st, "note", None),
                     "name": getattr(st, "name", None),
+                    "exec_hosts": getattr(st, "exec_hosts", None),
                 }
             )
         )
@@ -716,8 +719,11 @@ def _render_single(st, *, as_json: bool, via: str = ""):
             line += f"  elapsed: {st.elapsed}"
         if (getattr(st, "note", None) or "").strip():
             line += f"\n  note: {st.note.strip()}"
-        if getattr(st, "exec_hosts", None):
-            line += f"\n  exec_host: {' '.join(st.exec_hosts[:6])}"
+        _hosts = getattr(st, "exec_hosts", None) or []
+        if _hosts:
+            _shown = " ".join(_hosts[:6])
+            _suf = f" ...(+{len(_hosts) - 6} more)" if len(_hosts) > 6 else ""
+            line += f"\n  exec_hosts ({len(_hosts)}): {_shown}{_suf}"
         if st.stdout_path:
             line += f"\n  stdout: {st.stdout_path}"
         if st.stderr_path and st.stderr_path != st.stdout_path:
@@ -750,13 +756,15 @@ def _status_list_remote(
     # Falls back to IRI only on SSH transport failure (255).
     ssh_exc: Exception | None = None
     try:
-        _status_via_ssh_json_list(
+        jobs = _status_via_ssh_json_list(
             host,
             historical=historical,
             limit=limit,
             owner=owner,
-            as_json=as_json,
+            as_json=None,
         )
+        jobs = _apply_list_filters(jobs, queue=queue, states=states, limit=limit)
+        _render_list(jobs, host=host, as_json=as_json)
         return
     except Exception as e:
         if "255" not in str(e):
@@ -803,6 +811,7 @@ def _render_list(jobs, *, host: str | None = None, as_json: bool = False):
                         "elapsed": getattr(j, "elapsed", None),
                         "note": getattr(j, "note", None),
                         "name": getattr(j, "name", None),
+                        "exec_hosts": getattr(j, "exec_hosts", None),
                     }
                     for j in jobs
                 ],
@@ -856,13 +865,30 @@ def _status_via_ssh_json(host, job_id, *, historical: bool, as_json: bool):
     _render_single(st, as_json=as_json, via="ssh")
 
 
+def _apply_list_filters(jobs, *, queue, states, limit):
+    """Apply --queue / --states / --limit post-fetch for SSH path."""
+    if queue:
+        qlow = queue.lower()
+        jobs = [j for j in jobs if (j.queue or "").lower() == qlow]
+    if states:
+        wanted = {s.strip().lower() for s in states.split(",") if s.strip()}
+        if wanted:
+            jobs = [j for j in jobs if j.state.lower() in wanted]
+    if limit is not None and limit > 0:
+        jobs = jobs[:limit]
+    return jobs
+
+
 def _status_via_ssh_json_list(host, *, historical, limit, owner, as_json):
     from ezpz.remote import list_jobs_via_ssh
 
     jobs = list_jobs_via_ssh(
         host, historical=historical, limit=limit, owner=owner
     )
+    if as_json is None:
+        return jobs
     _render_list(jobs, host=host, as_json=as_json)
+    return jobs
 
 
 def _status_via_ssh(host, job_id, owner=None):  # noqa: ARG001 — owner kept for compat; JSON path uses it, text path ignores

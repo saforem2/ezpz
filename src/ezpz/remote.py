@@ -101,6 +101,22 @@ class RemoteSubmitError(RuntimeError):
     """Raised when a remote submission cannot be completed."""
 
 
+_JOB_ID_RE = __import__("re").compile(r"^[A-Za-z0-9._@\[\]\-:]+$")
+_HOST_RE = __import__("re").compile(r"^[A-Za-z0-9._\-]+$")
+
+
+def _validate_ssh_host(host: str) -> None:
+    """Fail fast when *host* contains characters SSH would interpret."""
+    if not host or not _HOST_RE.match(host):
+        raise ValueError(f"refusing suspicious SSH host {host!r}")
+
+
+def _validate_job_id(job_id: str) -> None:
+    """Fail fast for job IDs that could not have come from PBS."""
+    if not job_id or not _JOB_ID_RE.match(job_id):
+        raise ValueError(f"refusing suspicious job id {job_id!r}")
+
+
 @dataclass
 class RemoteJobStatus:
     """Status of a job as returned by IRI."""
@@ -800,6 +816,10 @@ def list_jobs_via_ssh(
     import subprocess as _sp
 
     # ── 1. Resolve IDs with qselect (scoped to owner, avoids whole-cluster JSON) ──
+    _validate_ssh_host(host)
+    if owner is not None:
+        if not owner or any(c in owner for c in (";", "&", "|", "`", "$", "\n", "\r")):
+            raise ValueError(f"refusing suspicious owner {owner!r}")
     qselect_arg = f" -u {_sx.quote(owner)}" if owner else ""
     xflag = " -x" if historical else ""
     argv_sel = [
@@ -809,7 +829,7 @@ def list_jobs_via_ssh(
         host,
         f"/opt/pbs/bin/qselect{qselect_arg}{xflag} 2>/dev/null",
     ]
-    proc_sel = _sp.run(argv_sel, capture_output=True, text=True, timeout=15)
+    proc_sel = _sp.run(argv_sel, capture_output=True, text=True, timeout=15)  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
     if proc_sel.returncode == 255:
         raise RemoteSubmitError(
             f"ssh transport 255 to {host}: {proc_sel.stderr.strip()}"
@@ -841,6 +861,8 @@ def list_jobs_via_ssh(
         truncated = len(ids) > _MAX_BULK
         if truncated:
             ids = ids[:_MAX_BULK]
+        for _jid in ids:
+            _validate_job_id(_jid)
         qids = " ".join(_sx.quote(j) for j in ids)
     if not _skip_json:
         argv_js = [
@@ -850,11 +872,11 @@ def list_jobs_via_ssh(
             host,
             f"/opt/pbs/bin/qstat -f -F json {qids} 2>/dev/null",
         ]
-        proc_js = _sp.run(
+        proc_js = _sp.run(  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
             argv_js,
             capture_output=True,
             text=True,
-            timeout=30 if truncated else 20,
+            timeout=max(25, len(ids) * 10),
         )
         if (
             proc_js.returncode != 255
@@ -875,6 +897,12 @@ def list_jobs_via_ssh(
                 out.sort(
                     key=lambda j: (order.get(j.state.lower(), 4), j.job_id)
                 )
+                if truncated and out:
+                    for _j in out:
+                        _j.raw = _j.raw or {}
+                        _j.raw["_truncated"] = True
+                    import sys as _sys
+                    print(f"[warn] showing {len(out)}/{_MAX_BULK}+ jobs (PBS bulk cap); use --limit or narrower filters", file=_sys.stderr)
                 if out:
                     return out
                 # JSON succeeded but yielded nothing — don't silently return empty;
@@ -883,9 +911,10 @@ def list_jobs_via_ssh(
                 pass  # fall through to text fallback
 
     # ── 3. Text-table fallback (older PBS, or json load failure) ──
+    _validate_ssh_host(host)
     qstat_cmd = "/opt/pbs/bin/qstat -x" if historical else "/opt/pbs/bin/qstat"
     argv_txt = ["ssh", "-o", "BatchMode=yes", host, qstat_cmd]
-    proc_txt = _sp.run(argv_txt, capture_output=True, text=True, timeout=15)
+    proc_txt = _sp.run(argv_txt, capture_output=True, text=True, timeout=15)  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
     if proc_txt.returncode == 255:
         raise RemoteSubmitError(
             f"ssh transport 255 to {host}: {proc_txt.stderr.strip()}"
@@ -930,6 +959,8 @@ def get_job_status_via_ssh(
     host: str, job_id: str, *, historical: bool = True
 ) -> RemoteJobStatus:
     """Fetch one job via SSH ``qstat -f -F json`` — rich fields, no bulk indirection."""
+    _validate_ssh_host(host)
+    _validate_job_id(job_id)
     import json as _js2
     import shlex as _sx2
     import subprocess as _sp2
@@ -941,7 +972,7 @@ def get_job_status_via_ssh(
         host,
         f"/opt/pbs/bin/qstat -f -F json {_sx2.quote(job_id)} 2>/dev/null",
     ]
-    proc = _sp2.run(argv, capture_output=True, text=True, timeout=15)
+    proc = _sp2.run(argv, capture_output=True, text=True, timeout=15)  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
     if proc.returncode == 255:
         raise RemoteSubmitError(
             f"ssh transport 255 to {host}: {proc.stderr.strip()}"
@@ -959,20 +990,12 @@ def get_job_status_via_ssh(
     # Fallback: plain qstat text for this job (covers historical where -f json
     # may not include F/E records on older PBS).
     cmd = (
-        f"/opt/pbs/bin/qstat -x {job_id}"
+        f"/opt/pbs/bin/qstat -x {_sx2.quote(job_id)}"
         if historical
-        else f"/opt/pbs/bin/qstat {job_id}"
+        else f"/opt/pbs/bin/qstat {_sx2.quote(job_id)}"
     )
-    argv2 = [
-        "ssh",
-        "-o",
-        "BatchMode=yes",
-        host,
-        _sx2.quote(cmd) if False else cmd,
-    ]
-    # Build without shell quoting so FQDN dots aren't mangled: join into single remote command.
     argv2 = ["ssh", "-o", "BatchMode=yes", host, cmd]
-    proc2 = _sp2.run(argv2, capture_output=True, text=True, timeout=15)
+    proc2 = _sp2.run(argv2, capture_output=True, text=True, timeout=15)  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
     if proc2.returncode != 0 or not proc2.stdout.strip():
         err = (proc2.stderr or proc2.stdout or "job not found").strip()
         raise RemoteSubmitError(err[:400])
