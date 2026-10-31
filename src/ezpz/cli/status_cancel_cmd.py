@@ -430,8 +430,38 @@ def _status_fanout(
 
     def _fetch_one(h: str):
         eff_owner = _explicit_owner if _explicit_owner is not None else _per_host_owner.get(h)
-        # Historical only makes sense for IRI; for SSH we just use qstat -x
-        # For fan-out keep it simple: non-historical, per-host limit
+        # Try SSH bulk JSON first (qmert path) to get full PBS fields
+        # (nodes/walltime/note/nodelist) — same as single-host. Falls to
+        # IRI only for non-PBS hosts like perlmutter/sirius.
+        try:
+            from ezpz.remote import list_jobs_via_ssh
+
+            jobs = list_jobs_via_ssh(
+                h, historical=historical, limit=limit, owner=eff_owner
+            )
+            # Apply --queue/--states post-fetch (PBS qselect only does -u/-x).
+            if queue or states:
+                _want_q = queue.lower() if queue else None
+                _want_s = (
+                    {s.strip().lower() for s in states.split(",") if s.strip()}
+                    if states
+                    else None
+                )
+                if _want_q:
+                    jobs = [j for j in jobs if (j.queue or "").lower() == _want_q]
+                if _want_s:
+                    jobs = [j for j in jobs if j.state.lower() in _want_s]
+            if limit:
+                jobs = jobs[:limit]
+            for j in jobs:
+                j.raw = j.raw or {}
+                j.raw["_fanout_host"] = h
+            if jobs:
+                return (h, jobs, None)
+            # No jobs via SSH (e.g. host uses different PBS path) — fall through
+            # to IRI / text fallback below.
+        except Exception:
+            pass
         try:
             from ezpz.remote import has_iri_backend, list_jobs_via_iri
 
@@ -449,7 +479,7 @@ def _status_fanout(
                     j.raw["_fanout_host"] = h
                 return (h, jobs, None)
         except Exception:
-            # Fall through to SSH attempt
+            # Fall through to SSH text fallback
             pass
         try:
             import subprocess
@@ -477,7 +507,6 @@ def _status_fanout(
                     if proc.returncode not in (0, None)
                     else "no jobs",
                 )
-            # Reuse existing SSH parser path: split into RemoteJobStatus
             from ezpz.remote import RemoteJobStatus as _RJS
 
             jobs = []
@@ -569,40 +598,194 @@ def _status_fanout(
         )
         return
     if sys.stdout.isatty():
-        # Fan-out rich table: add Host column
+        # Fan-out rich table: reuse the same qmert columns as single-host,
+        # plus a leading Host column so cross-machine output is disambiguated.
         from rich.console import Console
-        from rich.table import Table
+        from rich.table import Table as _FanTable
+        # Build a rich table mirroring _rich_table's 8-column layout, prepending Host.
+        # Use _rich_table's helpers: _short_wall + state coloring.
+        _HEAD8 = ["JOBID", "S", "QUEUE", "NODES", "WALL", "ELAP", "JOBNAME", "NOTE"]
+        # Re-materialize display rows exactly like _rich_table, then add Host.
+        smap_fan = {
+            "active": "R",
+            "running": "R",
+            "queued": "Q",
+            "held": "H",
+            "completed": "F",
+            "failed": "F",
+            "canceled": "F",
+            "new": "Q",
+        }
+        import shutil as _shutil
 
-        table = Table(
+        TWf = (
+            _shutil.get_terminal_size(fallback=(0, 24)).columns
+            if hasattr(_shutil, "get_terminal_size")
+            else 0
+        )
+        try:
+            import os as _osf
+
+            if _osf.environ.get("COLUMNS", "").isdigit():
+                TWf = int(_osf.environ["COLUMNS"])
+        except Exception:
+            pass
+        has_note_fan = any(
+            (getattr(j, "note", None) or "").strip() for j in all_jobs
+        )
+        ncols_fan = 8 if has_note_fan else 7
+        rows_fan: list[list[str]] = []
+        for j in all_jobs:
+            st_raw = j.state.upper()[0] if j.state else "?"
+            s_disp = smap_fan.get(j.state.lower(), st_raw)
+            short = j.job_id.split(".")[0]
+            wall = _short_wall(getattr(j, "walltime", None))
+            elap_val = getattr(j, "elapsed", None)
+            if elap_val:
+                elap = _short_wall(elap_val)
+            elif j.state.lower() in ("queued", "held", "new"):
+                elap = "--"
+            else:
+                elap = "—"
+            nodes = str(getattr(j, "nodes", None) or "—")
+            note = (getattr(j, "note", None) or "").strip()
+            if note.lower().startswith("insufficient"):
+                note = note.split(":")[-1].strip() if ":" in note else note
+            row = [
+                short,
+                s_disp,
+                j.queue or "—",
+                nodes,
+                wall,
+                elap,
+                getattr(j, "name", None) or "—",
+                note,
+            ]
+            rows_fan.append(row[:ncols_fan])
+        # Width-aware NOTE collapse (same as _rich_table).
+        def _tbl_w(ws: list[int]) -> int:
+            return sum(ws) + 3 * len(ws) + 1
+
+        def _widths_for_fan(rws: list[list[str]], n: int) -> list[int]:
+            hdrs = _HEAD8[:n]
+            return [
+                max(len(str(r[i])) for r in ([hdrs] + rws))
+                for i in range(n)
+            ]
+
+        widths_fan = _widths_for_fan(rows_fan, ncols_fan)
+        dropped_fan: dict[str, str] = {}
+        if TWf and ncols_fan == 8 and _tbl_w(widths_fan) > TWf:
+            for r in rows_fan:
+                if r[7]:
+                    dropped_fan[r[0]] = r[7]
+            ncols_fan = 7
+            rows_fan = [r[:7] for r in rows_fan]
+            widths_fan = _widths_for_fan(rows_fan, ncols_fan)
+        if TWf and _tbl_w(widths_fan) > TWf:
+            over = _tbl_w(widths_fan) - TWf
+            neww = max(8, widths_fan[6] - over)
+            if neww < widths_fan[6]:
+                widths_fan[6] = neww
+                for r in rows_fan:
+                    if len(r[6]) > neww:
+                        r[6] = r[6][: neww - 1] + "…"
+        # Adjust for Host column width in TWf check.
+        # Add 1 column + padding: re-check and re-collapse if needed.
+        # Use actual max host width from data.
+        max_host_w = max(
+            len((j.raw or {}).get("_fanout_host", "") or "")
+            for j in all_jobs
+        ) if all_jobs else 4
+        max_host_w = max(max_host_w, 4)  # "Host"
+        # If still over, the Host column is non-negotiable — truncate NOTE further.
+        # For fanout we keep it simple: render table with Host prepended and
+        # let Rich handle overflow; width tuning is best-effort.
+
+        table = _FanTable(
             show_header=True, header_style="bold", box=None, padding=(0, 1)
         )
         table.add_column("Host", style="bold cyan", no_wrap=True)
-        table.add_column("Job ID", style="dim", no_wrap=True)
-        table.add_column("User", style="dim")
-        table.add_column("State", justify="center")
-        table.add_column("Queue")
-        table.add_column("Exit", justify="center")
-        for j in all_jobs:
+        table.add_column("JOBID", style="dim", no_wrap=True)
+        table.add_column("S", justify="center")
+        table.add_column("QUEUE", no_wrap=True)
+        table.add_column("NODES", justify="right")
+        table.add_column("WALL", justify="right")
+        table.add_column("ELAP", justify="right")
+        table.add_column(
+            "JOBNAME", overflow="fold", max_width=widths_fan[6] if TWf else 32
+        )
+        if ncols_fan == 8:
+            table.add_column(
+                "NOTE", overflow="fold", max_width=widths_fan[7] if TWf else 40
+            )
+        for j, rd in zip(all_jobs, rows_fan):
             color = _STATE_COLORS.get(j.state.lower(), "")
-            st_disp = f"[{color}]{j.state}[/{color}]" if color else j.state
-            ec = str(j.exit_code) if j.exit_code is not None else "—"
+            s_styled = f"[{color}]{rd[1]}[/{color}]" if color else rd[1]
             host = (
                 (j.raw or {}).get("_fanout_host", "")
                 if isinstance(j.raw, dict)
                 else ""
             )
-            table.add_row(
-                host,
-                j.job_id.split(".")[0],
-                getattr(j, "owner", "") or "—",
-                st_disp,
-                j.queue or "—",
-                ec,
-            )
+            styled = [host, rd[0], s_styled, rd[2], rd[3], rd[4], rd[5], rd[6]]
+            if ncols_fan == 8:
+                styled.append(rd[7])
+            table.add_row(*styled)
+        table.box = __import__("rich.box", fromlist=["ROUNDED"]).ROUNDED
         Console().print(table)
+        # Sub-lines: dropped notes + running nodelist (mirrors _rich_table / qmert).
+        c2 = Console()
+        if dropped_fan:
+            c2.print("")
+            c2.print("[dim]notes:[/dim]")
+            for rd in rows_fan:
+                jid = rd[0]
+                if jid in dropped_fan:
+                    j0 = next(
+                        (jj for jj in all_jobs if jj.job_id.split(".")[0] == jid),
+                        None,
+                    )
+                    col2 = _STATE_COLORS.get(j0.state.lower(), "") if j0 else ""
+                    tag = f"[{col2}]{jid}[/{col2}]" if col2 else jid
+                    c2.print(f"  {tag} [dim]{dropped_fan[jid]}[/dim]")
+        # Running nodelist: group by job, respecting TWf.
+        running_fan = [
+            j for j in all_jobs if j.state.lower() in ("active", "running", "r")
+        ]
+        if running_fan:
+            c2.print("")
+            c2.print("[dim]running job nodes:[/dim]")
+
+            def _fit(items: list[str], prefix_len: int, suffix_tmpl: str):
+                if TWf <= 0:
+                    return items[:8], max(0, len(items) - 8)
+                avail = TWf - prefix_len
+                shown, used = [], 0
+                for it in items:
+                    add = len(it) + (1 if shown else 0)
+                    if used + add > avail - len(suffix_tmpl.format(0)):
+                        break
+                    shown.append(it)
+                    used += add
+                return shown, len(items) - len(shown)
+
+            rc_fan = _STATE_COLORS.get("active") or _STATE_COLORS.get("running") or ""
+            for j in running_fan:
+                hosts = getattr(j, "exec_hosts", None) or []
+                if not hosts:
+                    continue
+                jid = j.job_id.split(".")[0]
+                plain_prefix = f"  {jid} ({len(hosts)}): "
+                shown, remaining = _fit(
+                    hosts, len(plain_prefix), " ...(+{} more)"
+                )
+                line = " ".join(shown)
+                if remaining:
+                    line += f" [dim]...(+{remaining} more)[/dim]"
+                rc_tag = f"[{rc_fan}]{jid}[/{rc_fan}]" if rc_fan else jid
+                c2.print(f"  {rc_tag} [dim]({len(hosts)})[/dim]: {line}")
         if warnings and not as_json:
             for w in warnings[:3]:
-                # Use rich dim when TTY, plain when piped
                 if sys.stderr.isatty():
                     from rich.console import Console
 
@@ -612,18 +795,19 @@ def _status_fanout(
                 else:
                     click.echo(f"[warn] {w}", err=True)
     else:
+        # Piped fanout: same full qmert columns as single-host, plus Host prefix.
+        smap_p = {"active": "R", "running": "R", "queued": "Q", "held": "H", "failed": "F", "completed": "F", "canceled": "F", "new": "Q"}
         click.echo(
-            f"{'HOST':<12} {'JOB ID':<14} {'USER':<10} {'STATE':<10} {'QUEUE':<12} {'EXIT'}"
+            f"{'HOST':<10} {'JOBID':<12} {'S':<1} {'QUEUE':<14} {'NODES':>5} {'WALL':>5} {'ELAP':>5} {'JOBNAME':<28} {'NOTE'}"
         )
         for j in all_jobs:
-            ec = j.exit_code if j.exit_code is not None else "-"
-            host = (
-                (j.raw or {}).get("_fanout_host", "")
-                if isinstance(j.raw, dict)
-                else ""
-            )
+            s = smap_p.get(j.state.lower(), j.state[:1].upper() if j.state else "?")
+            nodes = str(getattr(j, "nodes", None) or "—")
+            wall = _short_wall(getattr(j, "walltime", None))
+            elap = _short_wall(getattr(j, "elapsed", None)) if getattr(j, "elapsed", None) else ("--" if j.state.lower() in ("queued", "held", "new") else "—")
+            host = (j.raw or {}).get("_fanout_host", "") if isinstance(j.raw, dict) else ""
             click.echo(
-                f"{host:<12} {j.job_id.split('.')[0]:<14} {getattr(j, 'owner', '') or '-':<10} {j.state:<10} {j.queue or '-':<12} {ec}"
+                f"{host:<10} {j.job_id.split('.')[0]:<12} {s:<1} {(j.queue or '—'):<14} {nodes:>5} {wall:>5} {elap:>5} {(getattr(j, 'name', None) or '—'):<28} {(getattr(j, 'note', None) or '')}"
             )
 
 

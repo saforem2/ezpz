@@ -1060,6 +1060,8 @@ def cancel_via_ssh(
     host: str, job_id: str, *, scheduler: str | None = None
 ) -> RemoteJobStatus:
     """Cancel via SSH qdel/scancel."""
+    _validate_ssh_host(host)
+    _validate_job_id(job_id)
     import shlex as _shlex
     import subprocess as _sp
 
@@ -1070,7 +1072,7 @@ def cancel_via_ssh(
         else f"scancel {_shlex.quote(job_id)}"
     )
     argv = ["ssh", "-o", "BatchMode=yes", host, cmd]
-    proc = _sp.run(argv, capture_output=True, text=True, timeout=30)
+    proc = _sp.run(argv, capture_output=True, text=True, timeout=30)  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
     if proc.returncode == 0:
         return RemoteJobStatus(
             job_id=job_id,
@@ -1192,6 +1194,8 @@ def update_via_ssh(
     account: str | None = None,
     scheduler: str | None = None,
 ) -> RemoteJobStatus:
+    _validate_ssh_host(host)
+    _validate_job_id(job_id)
     import shlex as _shlex2
     import subprocess as _sp2
 
@@ -1229,7 +1233,7 @@ def update_via_ssh(
         + " ".join(parts)
     )
     argv = ["ssh", "-o", "BatchMode=yes", host, cmd]
-    proc = _sp2.run(argv, capture_output=True, text=True, timeout=30)
+    proc = _sp2.run(argv, capture_output=True, text=True, timeout=30)  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
     if proc.returncode == 0:
         return RemoteJobStatus(
             job_id=job_id,
