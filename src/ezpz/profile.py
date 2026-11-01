@@ -84,7 +84,7 @@ def get_profiling_context(
     repeat: int,
     rank_zero_only: bool,
     record_shapes: bool = True,
-    with_stack: bool = True,
+    with_stack: bool = False,
     with_flops: bool = True,
     with_modules: bool = True,
     acc_events: bool = False,
@@ -108,7 +108,7 @@ def get_profiling_context(
         record_shapes (bool): If True, shapes of tensors are recorded.
             Defaults to True.
         with_stack (bool): If True, stack traces are recorded.
-            Defaults to True.
+            Defaults to False.
         with_flops (bool): If True, FLOPs are recorded.
             Defaults to True.
         with_modules (bool): If True, module information is recorded.
@@ -256,7 +256,7 @@ def profiling_context_from_args(
         repeat=int(getattr(args, "pytorch_profiler_repeat", 5)),
         rank_zero_only=bool(getattr(args, "rank_zero_only", False)),
         record_shapes=bool(getattr(args, "record_shapes", True)),
-        with_stack=bool(getattr(args, "with_stack", True)),
+        with_stack=bool(getattr(args, "with_stack", False)),
         with_flops=bool(getattr(args, "with_flops", True)),
         with_modules=bool(getattr(args, "with_modules", True)),
         acc_events=bool(getattr(args, "acc_events", False)),
