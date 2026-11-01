@@ -1,7 +1,25 @@
 # ezpz TODO
 
 Tracked issues, improvements, and potential enhancements identified
-from a full codebase review. **Last audited: 2026-06-24.**
+from a full codebase review. **Last audited: 2026-06-24.** Specs live in
+`docs/superpowers/specs/` (see [2026-11-01 roadmap/QOL+docs](docs/superpowers/specs/2026-11-01-roadmap-qol-docs-design.md)).
+
+> **Queued — 2026-11-01 brainstorm** (12 items, grouped; see [design](docs/superpowers/specs/2026-11-01-roadmap-qol-docs-design.md) for rationale).
+>
+> **Quick wins — branch + PR this week** (parallel worktrees):
+> 1. `ezpz watch` / `ezpz status --watch` — poll `status` with Rich + `terminal-notifier` on state flips (Q→R, R→F). Branch `feat/status-watch`.
+> 2. Fix `profile.py` (#272, #275, #270): gate `--with-stack` off on Aurora/Perlmutter, export before `key_averages`, add `forward/optim/step` ranges. Branch `fix/profile-272-275`.
+> 3. PBS wrapper exit-status masking (#246): propagate `PIPESTATUS` / `ERR` trap. Branch `fix/pbs-exit-status-246`.
+> 4. CLI docs index + preflight currency honest fix (open thread on #284 `preflight.sh` `@{u}` + stale fetch). Branch `docs/cli-index-preflight`.
+>
+> **Medium — spec, then branch** (3 plans landing on `main`):
+> 5. `jobs.py` PBS-only (#4 TODO, issues for Sunspot/Perlmutter SLURM): unify behind `scheduler_for()` + `squeue` parser mirroring `qstat` JSON from #285. → `docs/superpowers/specs/*-jobs-slurm-*.md`
+> 6. `ezpz doctor` polish: `ssh -O check` staleness, `ControlPersist` hint, `~/.ssh/config` User mismatch (the `sam`→`foremans` bug). → `docs/superpowers/specs/*-doctor-*.md`
+> 7. `utils/__init__.py` grab-bag (#8) + `history.py` slim (#5/#11) via re-export shim → `docs/history.md` outline. → `docs/superpowers/specs/*-utils-history-*.md`
+>
+> **Deferred (stub in spec, not forgotten):** `fetch`/`logs --follow` over SSH multiplex, `yeet` uv-managed Python, DeepSpeed explicit wrapper, CI deselected tests. Tracked in design § "Deferred" for a future spec.
+
+> **Prior audit — 2026-06-24.**
 
 When updating: include a `Status: DONE` line + commit/PR ref when an
 item ships, then prune in the next audit pass.
