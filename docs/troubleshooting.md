@@ -37,6 +37,7 @@ recommended fix.
 | `UNKNOWN` scheduler | No PBS/SLURM env vars | Run inside a job allocation; or set `PBS_JOBID`/`SLURM_JOB_ID` manually for testing |
 | Hostfile not found | Scheduler didn't create it | ezpz auto-creates one; check `HOSTFILE` env var |
 | Wrong number of ranks | Misconfigured job | Verify `--ntasks` (SLURM) or node count (PBS) matches expectations |
+| `Exit_status=0` despite job failure (`F` + non-zero `ezpz launch`) | Wrapper masked non-zero exit with later `cat`/`echo` | `ezpz submit` now emits `RC=$?` + `exit "$RC"` (with `set +e` guard in strict mode) — hand-written wrappers must do the same: `ezpz launch …; RC=$?; …; exit "$RC"` (#246) |
 
 ### Weights & Biases Issues
 
