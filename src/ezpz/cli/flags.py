@@ -25,9 +25,7 @@ def _non_negative_int(value: str) -> int:
             f"expected an integer, got {value!r}"
         ) from exc
     if as_int < 0:
-        raise argparse.ArgumentTypeError(
-            f"must be >= 0 (got {as_int})"
-        )
+        raise argparse.ArgumentTypeError(f"must be >= 0 (got {as_int})")
     return as_int
 
 
@@ -135,9 +133,9 @@ def add_profiling_args(
     )
     parser.add_argument(
         "--with-stack",
-        default=True,
+        default=False,
         action=argparse.BooleanOptionalAction,
-        help="Include stack traces in the profiler",
+        help="Include stack traces in the profiler (can hang/crash on deep FSDP+TP stacks; #272, #275)",
     )
     parser.add_argument(
         "--with-flops",
@@ -244,12 +242,21 @@ def build_test_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         # creating a circular dep).
         choices=[
             "debug",
-            "s", "small",
-            "m", "medium",
-            "l", "large",
-            "xl", "xlarge", "extra-large",
-            "xxl", "xxlarge", "extra-extra-large",
-            "xxxl", "xxxlarge", "extra-extra-extra-large",
+            "s",
+            "small",
+            "m",
+            "medium",
+            "l",
+            "large",
+            "xl",
+            "xlarge",
+            "extra-large",
+            "xxl",
+            "xxlarge",
+            "extra-extra-large",
+            "xxxl",
+            "xxxlarge",
+            "extra-extra-extra-large",
         ],
         help=(
             "Model size preset for the smoke test. The size ladder is "
