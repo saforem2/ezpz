@@ -1034,7 +1034,7 @@ class HfProfileArguments:
         metadata={"help": "Record tensor shapes in the torch profiler."},
     )
     with_stack: bool = field(
-        default=True,
+        default=False,
         metadata={"help": "Record source stacks in the torch profiler."},
     )
     with_flops: bool = field(

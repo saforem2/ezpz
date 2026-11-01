@@ -46,8 +46,11 @@ from typing import Any, Callable, Optional
 
 import torch
 import torch.profiler
-from torch.profiler import (ProfilerAction,  # record_function,
-                            ProfilerActivity, profile)
+from torch.profiler import (
+    ProfilerAction,  # record_function,
+    ProfilerActivity,
+    profile,
+)
 
 import ezpz
 
@@ -81,7 +84,7 @@ def get_profiling_context(
     repeat: int,
     rank_zero_only: bool,
     record_shapes: bool = True,
-    with_stack: bool = True,
+    with_stack: bool = False,
     with_flops: bool = True,
     with_modules: bool = True,
     acc_events: bool = False,
@@ -105,7 +108,7 @@ def get_profiling_context(
         record_shapes (bool): If True, shapes of tensors are recorded.
             Defaults to True.
         with_stack (bool): If True, stack traces are recorded.
-            Defaults to True.
+            Defaults to False.
         with_flops (bool): If True, FLOPs are recorded.
             Defaults to True.
         with_modules (bool): If True, module information is recorded.
@@ -133,12 +136,9 @@ def get_profiling_context(
     if profiler_type in {"torch", "pytorch", "pt"}:
 
         def trace_handler(p: torch.profiler.profile):
-            """
-            Callback function to handle the trace when it is ready.
-            """
-            sort_key = _table_sort_key(ezpz.get_torch_device_type())
-            logger.info("\n" + p.key_averages().table(sort_by=sort_key, row_limit=-1))
-            fname: str = "-".join(
+            """Export the trace first, then log the table (so a table bug doesn't destroy the trace; #272)."""
+            # Export before key_averages — key_averages can RecursionError on deep stacks (Aurora)
+            fname: str = "-".join(  # noqa: F811 — intentional shadowing
                 [
                     "torch-profiler",
                     f"rank{ezpz.get_rank()}",
@@ -147,8 +147,20 @@ def get_profiling_context(
                 ]
             )
             trace_output = Path(outdir).joinpath(f"{fname}.json")
-            logger.info(f"Saving torch profiler trace to: {trace_output.as_posix()}")
+            logger.info(
+                f"Saving torch profiler trace to: {trace_output.as_posix()}"
+            )
             p.export_chrome_trace(trace_output.as_posix())
+            sort_key = _table_sort_key(ezpz.get_torch_device_type())
+            try:
+                logger.info(
+                    "\n"
+                    + p.key_averages().table(sort_by=sort_key, row_limit=-1)
+                )
+            except RecursionError:
+                logger.warning(
+                    "key_averages().table() hit RecursionError (deep --with-stack tree); trace was still saved"
+                )
 
         schedule = torch.profiler.schedule(
             wait=wait,
@@ -244,7 +256,7 @@ def profiling_context_from_args(
         repeat=int(getattr(args, "pytorch_profiler_repeat", 5)),
         rank_zero_only=bool(getattr(args, "rank_zero_only", False)),
         record_shapes=bool(getattr(args, "record_shapes", True)),
-        with_stack=bool(getattr(args, "with_stack", True)),
+        with_stack=bool(getattr(args, "with_stack", False)),
         with_flops=bool(getattr(args, "with_flops", True)),
         with_modules=bool(getattr(args, "with_modules", True)),
         acc_events=bool(getattr(args, "acc_events", False)),
@@ -397,7 +409,9 @@ class PyInstrumentProfiler:
             pyinstrument = None  # type:ignore
         if pyinstrument is None:
             self.profiler = None
-            logger.critical("Unable to import 'pyinstrument', not running profiles!!")
+            logger.critical(
+                "Unable to import 'pyinstrument', not running profiles!!"
+            )
             logger.error(
                 "To run with 'pyinstrument',"
                 "run: 'python3 -m pip install pyinstrument'"
@@ -407,7 +421,9 @@ class PyInstrumentProfiler:
                 self.profiler = None
             else:
                 self.profiler = (
-                    pyinstrument.Profiler() if (rank is None or rank == 0) else None
+                    pyinstrument.Profiler()
+                    if (rank is None or rank == 0)
+                    else None
                 )
         self._start = time.perf_counter_ns()
         # Honor the requested outdir (callers pass one through
@@ -428,10 +444,16 @@ class PyInstrumentProfiler:
         dtpyinstrument = (time.perf_counter_ns() - self._start) / (10**9)
         if self.profiler is not None:
             self.profiler.stop()
-            self.profiler.print(color=True, timeline=True)  # , time='percent_of_total')
+            self.profiler.print(
+                color=True, timeline=True
+            )  # , time='percent_of_total')
             now = datetime.datetime.now().strftime("%Y-%m-%d-%H%M%S")
-            html_fp = Path(self.outdir).joinpath(f"pyinstrument-profile-{now}.html")
-            text_fp = Path(self.outdir).joinpath(f"pyinstrument-profile-{now}.txt")
+            html_fp = Path(self.outdir).joinpath(
+                f"pyinstrument-profile-{now}.html"
+            )
+            text_fp = Path(self.outdir).joinpath(
+                f"pyinstrument-profile-{now}.txt"
+            )
             logger.info(
                 " ".join(
                     [

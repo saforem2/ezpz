@@ -85,9 +85,11 @@ wait+warmup+active (default 1+2+3=6) steps before the first trace;
   fast. Pass `--rank-zero-only` to profile rank 0 alone, which is
   usually what you want.
 
-- **Trim trace size** — `--no-with-stack` removes Python stacks (the
-  biggest contributor), `--no-record-shapes` drops tensor shapes,
-  `--no-profile-memory` drops allocation tracking.
+- **Trim trace size / avoid stack hang** — by default stacks are *off*
+  (`--with-stack` is opt-in) because `--with-stack` can crash (Aurora,
+  #272: `RecursionError` on deep FSDP+TP stacks) or hang (Perlmutter,
+  #275) until the watchdog fires. `--no-with-stack` (default) /
+  `--record-shapes` / `--no-profile-memory` control trace size.
 
 - **Resize the work** — `--steps`, `--batch-size`, `--hidden-size`,
   `--layers` control the synthetic model, so you can make the profiled
