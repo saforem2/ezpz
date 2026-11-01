@@ -18,7 +18,7 @@ Install the extra, then wire Zephon in either directly or via the
 ``--dataloader zephon --zephon-recipe <toml>`` path added to the
 from-scratch examples:
 
-    uv pip install -U "ezpz[zephon]"
+    uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz[zephon]"
     ezpz launch python3 -m ezpz.examples.fsdp_tp --model small \\
         --dataloader zephon --zephon-recipe examples/zephon/local_jsonl.toml
 
@@ -55,7 +55,7 @@ def _require_zephon() -> Any:  # type: ignore[no-untyped-def]
     except ImportError as exc:
         raise ImportError(
             "Zephon is not installed. Install it with "
-            '`uv pip install "ezpz[zephon]"` or `uv pip install zephon`.'
+            '`uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz[zephon]"` or `uv pip install zephon`.'
         ) from exc
 
 

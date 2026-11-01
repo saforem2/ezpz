@@ -7,7 +7,7 @@ skipping tokens. No model/distributed required (single-rank round-trip).
 Usage:
     uv run python src/ezpz/examples/zephon/elastic_resume_demo.py
     # or via fsdp_tp wiring:
-    uv pip install "ezpz[zephon]"
+    uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz[zephon]"
     ezpz launch python src/ezpz/examples/zephon/elastic_resume_demo.py
 
 """

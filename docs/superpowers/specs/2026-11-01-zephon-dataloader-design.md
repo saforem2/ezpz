@@ -47,7 +47,7 @@ resume determinism.
 
 | Dimension | HF datasets + DistributedSampler (current default) | AOT tokenize → Arrow/Parquet | Zephon (this spec) |
 |---|---|---|---|
-| Setup | `pip install ezpz` (no extra) | Same + one-off offline tokenize+save | `pip install ezpz[zephon]` + TOML recipe |
+| Setup | `uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz"` | Same + one-off offline tokenize+save | `uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz[zephon]"` + TOML recipe |
 | First-batch latency (smoke, 16 docs, seq 32) | download+load_dataset+map+cache ≈ 5–30 s (cold), ~1 s (warm, cached) | same cold cost, then zero on reload (Arrow mmap) | import ~0.9 s + first batch ~3 s (tokenize on the fly), subsequent ~0.1 ms/batch |
 | Throughput (steady state) | memcpy from Arrow shards; ~CPU bound by sampler shuffle | fastest (direct Arrow mmap, no tokenize) | tokenize + pack per step; hidden by prefetch but still CPU-bound on tiny fixtures |
 | Checkpoint resume | re-reads dataset, re-shards by new DP degree — packing that depended on previous sharding silently changes (wrong tokens in packed sequences) | same as HF (sampler owns sharding) | elastic: checkpoint is pipeline-wide, survives DP resize (spare-swap on Aurora) |
