@@ -54,7 +54,7 @@ uv pip install git+https://github.com/saforem2/ezpz
     colors on any interpreter:
 
     ```bash linenums='0'
-    uv pip install "ezpz[cli]"
+    uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz[cli]"
     ```
 
     Colors respect the standard `NO_COLOR` and `FORCE_COLOR` environment
