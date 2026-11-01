@@ -26,7 +26,20 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
     if [ "$h" = "$u" ]; then ok "worktree current ($h)"
     else bad "worktree $h != upstream $u -- fetch/checkout first"; fi
   else
-    note "no upstream set -- skipping staleness check (compare to origin/main manually)"
+    # @{u} unavailable (no upstream configured) — try origin/main explicitly
+    # rather than passing; UNKNOWN is honest, silent skip is not.
+    if git rev-parse --verify origin/main >/dev/null 2>&1; then
+      if ! git fetch origin main --quiet 2>/dev/null; then
+        note "UNKNOWN staleness: fetch origin/main failed (credentials/origin unreachable) -- compare to origin/main manually"
+      elif um=$(git rev-parse --short origin/main 2>/dev/null); then
+        if [ "$h" = "$um" ]; then ok "worktree current vs origin/main ($h)"
+        elif [ -n "$um" ]; then bad "worktree $h != origin/main $um -- fetch/checkout first"; fi
+      else
+        note "UNKNOWN staleness: origin/main not resolvable -- compare to origin/main manually"
+      fi
+    else
+      note "UNKNOWN staleness: no upstream and no origin/main -- compare to origin/main manually"
+    fi
   fi
 fi
 

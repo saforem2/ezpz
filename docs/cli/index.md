@@ -5,43 +5,43 @@ distributed PyTorch applications.
 
 Explicitly, these are `ezpz <command>`:
 
-- 🚀 [`ezpz\u00a0launch`](./launch/index.md):
+- 🚀 [`ezpz launch`](./launch/index.md):
   Launch commands with _automatic **job scheduler** detection_ (PBS, Slurm)
-    - 💯 [`ezpz\u00a0test`](./test.md):
+    - 💯 [`ezpz test`](./test.md):
       Run simple distributed smoke test[^wrapper].
-    - 📊 [`ezpz\u00a0benchmark`](./benchmark.md):
+    - 📊 [`ezpz benchmark`](./benchmark.md):
       Run all examples and generate a report
-    - 📮 [`ezpz\u00a0submit`](./submit.md):
+    - 📮 [`ezpz submit`](./submit.md):
       Submit jobs to PBS (`qsub`) or SLURM (`sbatch`); generates job scripts
       automatically
-- 📊 [`ezpz\u00a0status`](./status.md):
+- 📊 [`ezpz status`](./status.md):
   Inspect job status locally or over SSH/IRI (fanout, filters, JSON)
-- 🚫 [`ezpz\u00a0cancel`](./cancel.md):
+- 🚫 [`ezpz cancel`](./cancel.md):
   Cancel a queued or running job (local or remote)
-- ⏱️ [`ezpz\u00a0extend`](./extend.md) / [`ezpz\u00a0update-job`](./extend.md):
+- ⏱️ [`ezpz extend`](./extend.md) / [`ezpz update-job`](./extend.md):
   Extend or retarget a queued job — walltime, queue, account
-- 📄 [`ezpz\u00a0fetch`](./fetch.md):
+- 📄 [`ezpz fetch`](./fetch.md):
   Read a job's stdout without opening an interactive SSH session
-- 📝 [`ezpz\u00a0logs`](./logs.md):
+- 📝 [`ezpz logs`](./logs.md):
   Browse per-example benchmark logs for a run
-- 🖥️ [`ezpz\u00a0resources`](./resources.md):
+- 🖥️ [`ezpz resources`](./resources.md):
   List IRI compute resources (Aurora, Polaris, Crux, …)
-- 🚨 [`ezpz\u00a0incidents`](./incidents.md):
+- 🚨 [`ezpz incidents`](./incidents.md):
   List IRI incidents — maintenance windows, outages, facility events
-- 📦 [`ezpz\u00a0yeet`](./yeet.md):
+- 📦 [`ezpz yeet`](./yeet.md):
   Distribute files (envs, models, datasets, etc.) to all worker nodes via
   parallel rsync
-    - 🗜️ [`ezpz\u00a0tar-env`](./tar-env.md):
+    - 🗜️ [`ezpz tar-env`](./tar-env.md):
       Package current Python environment as a tarball
-- 🩺 [`ezpz\u00a0doctor`](./doctor.md):
+- 🩺 [`ezpz doctor`](./doctor.md):
   Health check your environment
-- 💀 [`ezpz\u00a0kill`](./kill.md):
+- 💀 [`ezpz kill`](./kill.md):
   Kill ezpz-launched python processes (local node or `--all-nodes`)
-- ⬆️ [`ezpz\u00a0update`](./update.md):
+- ⬆️ [`ezpz update`](./update.md):
   Upgrade `ezpz` in the active environment and refresh `utils.sh`
-- 📤 [`ezpz\u00a0export-amsc`](./export-amsc.md):
+- 📤 [`ezpz export-amsc`](./export-amsc.md):
   Export a finished run as one AmSC at-scale benchmarks CSV row
-- ⌨️ [`ezpz\u00a0completion`](./completion.md):
+- ⌨️ [`ezpz completion`](./completion.md):
   Emit shell completion for `bash`/`zsh`/`fish`
 - 📝 [`ezpz.examples`](../examples/index.md):
   Collection of distributed training examples (DDP, FSDP, ViT, FSDP+TP,
