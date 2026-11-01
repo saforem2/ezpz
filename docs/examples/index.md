@@ -11,7 +11,7 @@ so pick whichever matches your workload.
 
 ### Prerequisites
 
-- **ezpz** installed: `pip install ezpz` or `pip install git+https://github.com/saforem2/ezpz`
+- **ezpz** installed: `uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz"` (never bare `pip install ezpz` — that is a different PyPI package)
 - **PyTorch** (auto-detected at runtime)
 - **MPI** for multi-GPU training (`mpi4py` + MPICH or OpenMPI). Single-GPU and CPU work without MPI.
 

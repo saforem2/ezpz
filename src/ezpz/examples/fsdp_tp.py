@@ -683,12 +683,17 @@ class _CrossEntropyChunkedBackward(torch.autograd.Function):
             # softmax(logits) - onehot(labels), in fp32 (matches eager grad).
             probs = torch.softmax(logits_chunk, dim=-1)
             ignored = labels_chunk == ignore_index
-            safe = torch.where(ignored, torch.zeros_like(labels_chunk), labels_chunk)
+            safe = torch.where(
+                ignored, torch.zeros_like(labels_chunk), labels_chunk
+            )
             probs.scatter_add_(
                 -1,
                 safe.unsqueeze(-1),
                 torch.full(
-                    (safe.shape[0], 1), -1.0, dtype=probs.dtype, device=probs.device
+                    (safe.shape[0], 1),
+                    -1.0,
+                    dtype=probs.dtype,
+                    device=probs.device,
                 ),
             )
             grad_chunk = probs * scale
@@ -893,7 +898,9 @@ def _cross_entropy_fused_linear(
     # eager). Sum per-chunk CE then divide once so autograd scales correctly.
     valid = (labels_1d != ignore_index).sum().clamp(min=1).to(torch.float32)
 
-    def _chunk_loss(h_chunk: torch.Tensor, lbl_chunk: torch.Tensor) -> torch.Tensor:
+    def _chunk_loss(
+        h_chunk: torch.Tensor, lbl_chunk: torch.Tensor
+    ) -> torch.Tensor:
         logits_c = output_module(h_chunk)  # FSDP unshards weight here
         if hasattr(logits_c, "logits"):
             logits_c = logits_c.logits
@@ -1777,6 +1784,23 @@ def parse_args(argv: Optional[list[str]] = None):
             "Ignored for eager/compiled/loss-parallel."
         ),
     )
+    # Dataloader selection: hf (default, existing path) or zephon (elastic,
+    # requires ezpz[zephon]). The --zephon-recipe flag is only meaningful
+    # with --dataloader zephon; defaults align with the torchtitan-zephon
+    # reference integration's local smoke recipe.
+    parser.add_argument(
+        "--dataloader",
+        type=str,
+        default="hf",
+        choices=["hf", "zephon"],
+        help="Dataloader backend: hf (DistributedSampler+HF datasets, default) or zephon (elastic, requires ezpz[zephon]). Zephon survives DP-size changes on checkpoint/resume.",
+    )
+    parser.add_argument(
+        "--zephon-recipe",
+        type=str,
+        default=None,
+        help="Path to a Zephon TOML recipe (with --dataloader zephon). If omitted, fsdp_tp uses its bundled local_jsonl recipe. Relative paths in the TOML are resolved from that file.",
+    )
     # max_batch_size: int = 32
     # max_seq_len: int = 32768
     # Shared profiler flags (--profile / --pyinstrument-profiler / etc.),
@@ -1854,7 +1878,9 @@ def _maybe_enable_cpu_backend_for_async_ckpt(args: argparse.Namespace) -> None:
                 os.environ["TORCH_BACKEND"],
             )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("could not set composite backend for --async-ckpt: %s", exc)
+        logger.warning(
+            "could not set composite backend for --async-ckpt: %s", exc
+        )
 
 
 def _configure_fsdp_gradient_division(model: nn.Module) -> None:
@@ -1876,7 +1902,9 @@ def _configure_fsdp_gradient_division(model: nn.Module) -> None:
     leaves FSDP2's default mean reduce-scatter in place).
     """
     if os.environ.get("EZPZ_FSDP_GRAD_DIV", "1") == "0":
-        logger.info("Skipping FSDP gradient-division config (EZPZ_FSDP_GRAD_DIV=0)")
+        logger.info(
+            "Skipping FSDP gradient-division config (EZPZ_FSDP_GRAD_DIV=0)"
+        )
         return
     force_sum_reduction = False
     if torch.distributed.is_available() and torch.distributed.is_initialized():
@@ -1973,7 +2001,6 @@ def _lora_is_applied(model: nn.Module) -> bool:
     stays correct for callers that apply LoRA themselves.
     """
     return any(True for _ in _lora.iter_lora_modules(model))
-
 
 
 def frozen_unit_kwargs(mods, fsdp_kwargs: dict) -> dict:
@@ -2216,9 +2243,7 @@ def parallelize(
     return model
 
 
-def _apply_activation_checkpointing(
-    model: nn.Module, mode: str
-) -> nn.Module:
+def _apply_activation_checkpointing(model: nn.Module, mode: str) -> nn.Module:
     """Wrap transformer blocks with activation checkpointing in-place.
 
     `mode`:
@@ -2499,7 +2524,9 @@ def _build_hf_dataloader(
         else None
     )
     # Per-rank sample count after DistributedSampler shards + drops the tail.
-    per_rank = (len(dataset) // dpsize) if sampler is not None else len(dataset)
+    per_rank = (
+        (len(dataset) // dpsize) if sampler is not None else len(dataset)
+    )
     if per_rank // batch_size < 1:
         raise ValueError(
             "HF dataloader with drop_last=True yields 0 full batches for this "
@@ -2532,7 +2559,11 @@ def _push_precision_to_wandb(summary: "dict[str, str]") -> None:
     (rank 0, best-effort). Config (not per-step metric) since dtypes are static
     for the run; `allow_val_change` so the post-step-1 optimizer-state update
     can amend it."""
-    if ezpz.get_rank() != 0 or wandb is None or getattr(wandb, "run", None) is None:
+    if (
+        ezpz.get_rank() != 0
+        or wandb is None
+        or getattr(wandb, "run", None) is None
+    ):
         return
     try:
         wandb.config.update(  # type: ignore[union-attr]
@@ -2570,11 +2601,11 @@ def _log_precision_summary(
         mode = "on"
     summary = {
         "mixed_precision": mode,
-        "master_weights": master,       # stored param / optimizer target
-        "compute_weights": compute,     # fwd/bwd param copy (param_dtype)
+        "master_weights": master,  # stored param / optimizer target
+        "compute_weights": compute,  # fwd/bwd param copy (param_dtype)
         "activations": compute,
-        "grad_reduce": reduce_s,        # reduce_dtype
-        "loss_accum": "float32",        # CE always accumulates in fp32
+        "grad_reduce": reduce_s,  # reduce_dtype
+        "loss_accum": "float32",  # CE always accumulates in fp32
         "optimizer_states": "pending",  # amended post-step-1
         "reduce_dtype_env": os.environ.get("EZPZ_REDUCE_DTYPE", "fp32"),
         "fp32_flag": str(bool(args.fp32)),
@@ -2589,8 +2620,14 @@ def _log_precision_summary(
             "  - loss / cross-entropy accumulation                : %s (always)\n"
             "  - optimizer states (AdamW)                          : logged at first step\n"
             "  (EZPZ_REDUCE_DTYPE=%s, --fp32=%s)",
-            mode, master, compute, compute, reduce_s, summary["loss_accum"],
-            summary["reduce_dtype_env"], summary["fp32_flag"],
+            mode,
+            master,
+            compute,
+            compute,
+            reduce_s,
+            summary["loss_accum"],
+            summary["reduce_dtype_env"],
+            summary["fp32_flag"],
         )
     _push_precision_to_wandb(summary)
     return summary
@@ -2615,12 +2652,15 @@ def _log_optimizer_state_dtype(
                 logger.info(
                     "precision (optimizer states, post-step-1): "
                     "exp_avg=%s exp_avg_sq=%s",
-                    _local_dtype(ea), _local_dtype(eas),
+                    _local_dtype(ea),
+                    _local_dtype(eas),
                 )
             break
     else:
         if ezpz.get_rank() == 0:
-            logger.info("precision (optimizer states): no populated state found")
+            logger.info(
+                "precision (optimizer states): no populated state found"
+            )
     if summary is not None:
         summary["optimizer_states"] = dtype
         _push_precision_to_wandb(summary)
@@ -2944,9 +2984,7 @@ def train(
     # silently drop attention from the count. Reported MFU is then a
     # lower bound: real utilization is at least the printed number,
     # often significantly higher on long-seq runs.
-    _model_flops = try_estimate_fake(
-        model, (args.batch_size, args.seq_len)
-    )
+    _model_flops = try_estimate_fake(model, (args.batch_size, args.seq_len))
     if _model_flops > 0:
         logger.info(
             "FLOPs counted exactly via FakeTensorMode at shape "
@@ -2991,7 +3029,9 @@ def train(
     # FSDP2 mixed-precision policy (param in bf16, reduce in fp32). None when
     # --fp32 is set (pure fp32 for NaN debugging).
     mp_config: Optional[MixedPrecisionPolicy] = None
-    _reduce_dtype = torch.float32  # default (also the effective dtype under --fp32)
+    _reduce_dtype = (
+        torch.float32
+    )  # default (also the effective dtype under --fp32)
     if not args.fp32:
         # reduce_dtype: fp32 gradient reduce-scatter is more accurate, but for
         # a large-vocab output projection (e.g. agpt's 256K) the single
@@ -3026,7 +3066,10 @@ def train(
     use_loss_parallel = (
         getattr(args, "loss_impl", "eager") == "loss-parallel" and args.tp > 1
     )
-    if getattr(args, "loss_impl", "eager") == "loss-parallel" and not use_loss_parallel:
+    if (
+        getattr(args, "loss_impl", "eager") == "loss-parallel"
+        and not use_loss_parallel
+    ):
         logger.warning(
             "--loss-impl=loss-parallel requires tp>1 (got tp=%d); falling back "
             "to compiled CE.",
@@ -3049,10 +3092,7 @@ def train(
         deepest_depth = -1
         deepest_len = -1
         for name, module in model.named_modules():
-            if (
-                isinstance(module, torch.nn.ModuleList)
-                and len(module) > 0
-            ):
+            if isinstance(module, torch.nn.ModuleList) and len(module) > 0:
                 depth = name.count(".")
                 if depth > deepest_depth or (
                     depth == deepest_depth and len(module) > deepest_len
@@ -3210,7 +3250,12 @@ def train(
             use_fused_linear = True
     act_activations: dict[str, torch.Tensor] = {}
     act_handles: list[torch.utils.hooks.RemovableHandle] = []
-    if track_hist and track_act_hist and ezpz.get_rank() == 0 and not is_hf_model:
+    if (
+        track_hist
+        and track_act_hist
+        and ezpz.get_rank() == 0
+        and not is_hf_model
+    ):
         # `_register_activation_hooks` indexes into `model.layers[i]`, which
         # is ezpz-Transformer specific. HF models nest blocks under
         # `model.model.layers` (Llama/Mistral) or `model.gpt_neox.layers`
@@ -3257,7 +3302,9 @@ def train(
     # the optimizer-state dtype after the first step (on a FRESH run the state
     # dict is empty until then; a RESUMED run has it populated by
     # load_checkpoint, so reading it post-step-1 is correct either way).
-    _precision_summary = _log_precision_summary(model, mp_config, _reduce_dtype, args)
+    _precision_summary = _log_precision_summary(
+        model, mp_config, _reduce_dtype, args
+    )
 
     # --- Resume from checkpoint (auto-detect latest) --------------------------
     # Both model AND optimizer exist and are fully sharded here, so this is the
@@ -3267,7 +3314,9 @@ def train(
     # Async checkpointing needs a durable target to fan out to; a node-local
     # stage dir alone is not resumable after a failure (see _checkpoint.py).
     if args.async_ckpt and not args.ckpt_dir:
-        raise ValueError("--async-ckpt requires --ckpt-dir (the durable target)")
+        raise ValueError(
+            "--async-ckpt requires --ckpt-dir (the durable target)"
+        )
     ckpt_stage_dir = args.ckpt_stage_dir
     if args.async_ckpt and not ckpt_stage_dir:
         jobid = (
@@ -3318,6 +3367,52 @@ def train(
         dataloader = data["dataloader"]
         if args.tp > 1:
             dataloader = TPBroadcastDataLoader(dataloader, tp_group)
+    elif (
+        getattr(args, "dataloader", "hf") == "zephon"
+        or getattr(args, "dataset", "").lower() == "zephon"
+    ):
+        # Explicit Zephon path (preferred). Also triggered by --dataset zephon for legacy scripts.
+        if args.dataset.lower() in {"zephon", "random", "mnist"}:
+            logger.info(
+                "Using Zephon dataloader (--dataloader zephon). Ignoring dataset=%s.",
+                args.dataset,
+            )
+        from ezpz.data.zephon import ZephonDataLoader
+
+        recipe = getattr(args, "zephon_recipe", None) or str(
+            Path(__file__).parent / "zephon" / "local_jsonl.toml"
+        )
+        dataloader = ZephonDataLoader(
+            recipe,
+            seq_len=args.seq_len,
+            microbatch_tokens=getattr(args, "microbatch_tokens", None),
+            aggregate_dir=getattr(args, "zephon_aggregate_dir", None)
+            or os.environ.get("ZEPHON_AGGREGATE_DIR"),
+            aggregate_store=getattr(args, "zephon_aggregate_store", None)
+            or os.environ.get("ZEPHON_AGGREGATE_STORE"),
+            run_id=getattr(args, "zephon_run_id", None)
+            or os.environ.get("ZEPHON_RUN_ID"),
+        )
+        # Restore deterministically on resume (no sampler — Zephon owns sharding).
+        if (
+            "resume_meta" in locals()
+            and resume_meta
+            and (
+                resume_meta.get("dataloader_state")
+                or resume_meta.get("zephon_state")
+            )
+        ):
+            dataloader.load_state(
+                resume_meta.get("dataloader_state")
+                or resume_meta.get("zephon_state")
+            )
+        dataset = None  # packing is inside Zephon; no hf_dataset
+        sampler = None
+        # Preserve TP semantics if the dataloader needs it (broadcast within TP handled by Zephon dp_degree).
+        if args.tp > 1:
+            from ezpz.data.distributed import TPBroadcastDataLoader
+
+            dataloader = TPBroadcastDataLoader(dataloader, tp_group)  # type: ignore[arg-type]
     elif args.dataset.lower() == "random":
         from ezpz.data.distributed import get_random_dataset_fsdp_tp
 
@@ -3333,7 +3428,6 @@ def train(
         dataset = data["dataset"]
         sampler = data["sampler"]
         dataloader = data["dataloader"]
-    # if args.dataset.lower() != "random":
     else:
         from ezpz.data.distributed import TPBroadcastDataLoader
 
@@ -3552,7 +3646,9 @@ def train(
                         if _sample is not None:
                             _hist = _histogram_dict(_sample, hist_bins)
                             if _hist is not None:
-                                _step_probe[f"hist/{dataset_tag}/logits"] = _hist
+                                _step_probe[f"hist/{dataset_tag}/logits"] = (
+                                    _hist
+                                )
                 tp_mod = getattr(ezpz, "tp", None)
                 tp_rank = (
                     getattr(tp_mod, "get_tensor_parallel_rank", lambda: 0)()
@@ -3722,7 +3818,9 @@ def train(
                 # the per-GPU rate is tp× lower. (tokens_per_rank / dt would be
                 # per-DP-group, over-counting per-GPU by `tp`; at tp=1
                 # world_size==dpsize so this is unchanged.)
-                metrics["train/tps_per_gpu"] = tokens_this_step / world_size / dt_step
+                metrics["train/tps_per_gpu"] = (
+                    tokens_this_step / world_size / dt_step
+                )
                 metrics["train/tps"] = tokens_this_step / dt_step
             # Async-ckpt staging time from the previous step's save, carried
             # here so it lands in the JSONL + W&B alongside the other train/*
@@ -3757,15 +3855,26 @@ def train(
             if not _precision_in_jsonl:
                 try:
                     history._write_jsonl_entry(
-                        {f"precision/{k}": v for k, v in _precision_summary.items()}
+                        {
+                            f"precision/{k}": v
+                            for k, v in _precision_summary.items()
+                        }
                     )
                 except Exception:  # noqa: BLE001 — logging must not break training
-                    logger.debug("could not write precision JSONL entry", exc_info=True)
+                    logger.debug(
+                        "could not write precision JSONL entry", exc_info=True
+                    )
                 _precision_in_jsonl = True
             history.log_metrics(
                 metrics,
                 logger=logger,
-                debug_prefixes=("hist/", "grad/", "input/", "labels/", "param/"),
+                debug_prefixes=(
+                    "hist/",
+                    "grad/",
+                    "input/",
+                    "labels/",
+                    "param/",
+                ),
                 include_summary=True,
                 rank0_only_summary=True,
             )
@@ -3780,9 +3889,18 @@ def train(
                 _ckpt_meta = {
                     "tokens_seen": tokens_seen,
                     "epoch": epoch,
-                    # Next batch to run on resume within `epoch`.
                     "batch_offset": idx + 1,
                 }
+                # Persist Zephon elastic state so resume on a different DP degree stays deterministic.
+                try:
+                    if "dataloader" in locals() and hasattr(
+                        dataloader, "save_state"
+                    ):
+                        _dls = dataloader.save_state()  # type: ignore[union-attr]
+                        if _dls is not None:
+                            _ckpt_meta["dataloader_state"] = _dls
+                except Exception as _ze:
+                    logger.warning("Zephon save_state failed: %s", _ze)
                 if args.async_ckpt:
                     from ezpz.examples._checkpoint import (
                         finalize_fanout,
@@ -3878,7 +3996,9 @@ def main(args: argparse.Namespace) -> int:
     """Entrypoint to set up distributed context and dispatch training."""
     ezpz.silence_noisy_loggers()
     t0 = time.perf_counter()
-    rank = ezpz.distributed.setup_torch(tensor_parallel_size=args.tp, seed=args.seed)
+    rank = ezpz.distributed.setup_torch(
+        tensor_parallel_size=args.tp, seed=args.seed
+    )
     t_setup = time.perf_counter()
     base_dir = args.outdir if args.outdir else None
     # Collective (broadcasts the shared timestamp) — every rank must call it.

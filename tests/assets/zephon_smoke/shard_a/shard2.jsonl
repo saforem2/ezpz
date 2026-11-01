@@ -1,0 +1,4 @@
+{"text":"Mixture test: this shard lets us verify weight-driven sampling across sources."}
+{"text":"Provenance matters — we check that samples come from the expected source."}
+{"text":"A second record in shard A increases its effective token mass for mixing."}
+{"text":"Packing groups tokens into windows; mixing chooses which source contributes next."}

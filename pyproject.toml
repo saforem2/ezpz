@@ -58,6 +58,7 @@ ezpz-generate-tui = "ezpz.examples.generate_tui:main" # XXX: Use `ezpz generate 
 vit = ["timm"]
 mpi = ["mpi4py"]
 hf = ["accelerate"]
+zephon = ["zephon>=0.2.1"]
 cli = ["rich-argparse>=1.8.0"]
 # xpu = ["pytorch-triton-xpu>=3.3.0 ; sys_platform == 'linux'"]
 # xpu = ["pytorch-triton-xpu"]
