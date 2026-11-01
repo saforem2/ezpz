@@ -1,0 +1,12 @@
+# Minimal local-JSONL recipe for Zephon smoke tests.
+# Mirrors torchtitan-zephon's examples/zephon/local_jsonl.toml shape.
+
+text_field = "text"
+seed = 42
+chunk_size = 4
+
+[[sources]]
+name = "prose"
+path = "../../tests/assets/zephon_mixture/prose"
+fmt = "jsonl"
+weight = 1.0
