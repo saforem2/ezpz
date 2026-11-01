@@ -21,12 +21,25 @@ cd "$W" 2>/dev/null || { bad "worktree $W does not exist"; exit 1; }
 
 # --- worktree currency: a pinned worktree misses files recent commits moved ---
 if git rev-parse --git-dir >/dev/null 2>&1; then
+  h=$(git rev-parse --short HEAD 2>/dev/null)
   if u=$(git rev-parse --short '@{u}' 2>/dev/null); then
-    h=$(git rev-parse --short HEAD 2>/dev/null)
     if [ "$h" = "$u" ]; then ok "worktree current ($h)"
     else bad "worktree $h != upstream $u -- fetch/checkout first"; fi
   else
-    note "no upstream set -- skipping staleness check (compare to origin/main manually)"
+    # @{u} unavailable (no upstream configured) — try origin/main explicitly
+    # rather than passing; UNKNOWN is honest, silent skip is not.
+    if git rev-parse --verify origin/main >/dev/null 2>&1; then
+      if ! git fetch origin main --quiet 2>/dev/null; then
+        note "UNKNOWN staleness: fetch origin/main failed (credentials/origin unreachable) -- compare to origin/main manually"
+      elif um=$(git rev-parse --short origin/main 2>/dev/null); then
+        if [ "$h" = "$um" ]; then ok "worktree current vs origin/main ($h)"
+        elif [ -n "$um" ]; then bad "worktree $h != origin/main $um -- fetch/checkout first"; fi
+      else
+        note "UNKNOWN staleness: origin/main not resolvable -- compare to origin/main manually"
+      fi
+    else
+      note "UNKNOWN staleness: no upstream and no origin/main -- compare to origin/main manually"
+    fi
   fi
 fi
 
@@ -44,7 +57,7 @@ if [ -n "$J" ] && [ -f "$J" ]; then
   shebang=$(head -1 "$J")
   case "$shebang" in
     *"bash --login"*|*"bash -l"* ) ok "job script shebang has --login ($J)";;
-    * ) bad "job script shebang lacks --login: $shebang -- PBS has no module without it";;
+    * ) bad "job script shebang lacks --login ($J) -- PBS has no module without it";;
   esac
   if grep -Eq '^\s*set\s+.*-.*u' "$J" 2>/dev/null; then
     bad "$J contains set -u -- breaks Lmod (/etc/profile, ZSH_EVAL_CONTEXT)"
@@ -65,8 +78,9 @@ if [ -n "$V" ]; then
   if [ ! -d "$V" ] || { [ ! -x "$V/bin/python" ] && [ ! -x "$V/bin/python3" ]; }; then
     bad "venv $V not found (no bin/python)"
   else
+    _pypath="$V/bin/python"; [ -x "$_pypath" ] || _pypath="$V/bin/python3"
     for m in torch mpi4py ezpz; do
-      "$V/bin/python" -c "import $m" 2>/dev/null \
+      "$_pypath" -c "import $m" 2>/dev/null \
         && ok "py:$m in $V" \
         || bad "py:$m not importable in $V"
     done
@@ -75,7 +89,7 @@ if [ -n "$V" ]; then
     # resolve. This catches a stale venv that predates a renamed kwarg. It does
     # NOT test the job's actual kwargs (use --dry-run / inspect.signature with
     # real args for that).
-    if "$V/bin/python" -c "import ezpz.distributed; import inspect; inspect.signature(ezpz.distributed.setup_torch)" 2>/dev/null; then
+    if "$_pypath" -c "import ezpz.distributed; import inspect; inspect.signature(ezpz.distributed.setup_torch)" 2>/dev/null; then
       ok "API: ezpz.distributed imports and signatures resolvable"
     else
       bad "API: ezpz.distributed not importable in $V -- wrong venv or stale checkout?"
