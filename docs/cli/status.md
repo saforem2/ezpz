@@ -130,3 +130,17 @@ When stdout is a TTY the table is rendered with [`rich`](https://github.com/Text
 - [`ezpz cancel`](./cancel.md) — cancel a queued or running job
 - [`ezpz extend`](./extend.md) — change walltime / queue / account of a queued job
 - [Remote submission](../guides/remote-submission.md) — backends, auth, and the auto-fallback rule
+
+## Watch mode
+
+Poll remotely and get a desktop notification when a job changes state (queued
+-> running, running -> finished) or disappears from the queue:
+
+```bash
+ezpz status --watch --remote aurora --interval 10
+ezpz watch --remote aurora --interval 10   # same loop, explicit subcommand
+ezpz status --remote aurora --once         # one tick, no loop (CI-friendly)
+```
+
+Notifications use `terminal-notifier` on macOS and `notify-send` on Linux when
+available, otherwise an audible bell; pass `--no-notify` to silence them.

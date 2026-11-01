@@ -329,6 +329,31 @@ def _rich_single(st, *, via: str = ""):
     default=False,
     help="Emit JSON instead of table.",
 )
+@click.option(
+    "--watch",
+    is_flag=True,
+    default=False,
+    help="Poll continuously and notify on Q->R / R->F (requires --remote).",
+)
+@click.option(
+    "--interval",
+    type=float,
+    default=10,
+    show_default=True,
+    help="Poll interval in seconds (with --watch).",
+)
+@click.option(
+    "--once",
+    is_flag=True,
+    default=False,
+    help="Single poll and exit (alias for non-watch).",
+)
+@click.option(
+    "--no-notify",
+    is_flag=True,
+    default=False,
+    help="Disable desktop notifications.",
+)
 def status_cmd(
     job_id,
     remote,
@@ -340,8 +365,76 @@ def status_cmd(
     states,
     all_users,
     as_json,
+    watch,
+    interval,
+    once,
+    no_notify,
 ):
     """Show job status (local or remote)."""
+    if once and not watch:
+        # --once without --watch: one-shot alias (still requires --remote like --watch)
+        eff_remote = remote
+        eff_jid = job_id
+        if not eff_remote and eff_jid:
+            from ezpz.remote import looks_like_host as _lh_once
+
+            if _lh_once(eff_jid):
+                eff_remote, eff_jid = eff_jid, None
+        if eff_remote:
+            if owner is None and not all_users:
+                from ezpz.remote import resolve_remote_owner as _rro2
+
+                owner = _rro2(eff_remote) or owner
+            from ezpz.cli.watch_cmd import _poll as _once_poll
+
+            sys.exit(
+                _once_poll(
+                    {
+                        "host": eff_remote,
+                        "historical": historical,
+                        "limit": limit,
+                        "owner": owner,
+                        "no_notify": True,
+                    },
+                    interval,
+                    once=True,
+                )
+            )
+        # no remote → fall through to normal status (local/fanout) single-shot
+    if watch:
+        if not remote:
+            # resolve positional host sugar first (same as below)
+            if job_id:
+                from ezpz.remote import looks_like_host as _looks_host2
+
+                if _looks_host2(job_id):
+                    remote = job_id
+                    job_id = None
+        if not remote:
+            click.echo(
+                "status --watch requires --remote HOST (or positional host)",
+                err=True,
+            )
+            sys.exit(2)
+        if owner is None and not all_users:
+            from ezpz.remote import resolve_remote_owner as _rro
+
+            owner = _rro(remote) or owner
+        from ezpz.cli.watch_cmd import _poll as _watch_poll
+
+        sys.exit(
+            _watch_poll(
+                {
+                    "host": remote,
+                    "historical": historical,
+                    "limit": limit,
+                    "owner": owner,
+                    "no_notify": no_notify,
+                },
+                interval,
+                once=once or False,
+            )
+        )
     # Positional sugar: ezpz status aurora  ≡  --remote aurora
     if not remote and job_id:
         from ezpz.remote import looks_like_host as _looks_host
@@ -429,7 +522,11 @@ def _status_fanout(
             _per_host_owner[h] = resolve_remote_owner(h)
 
     def _fetch_one(h: str):
-        eff_owner = _explicit_owner if _explicit_owner is not None else _per_host_owner.get(h)
+        eff_owner = (
+            _explicit_owner
+            if _explicit_owner is not None
+            else _per_host_owner.get(h)
+        )
         # Try SSH bulk JSON first (qmert path) to get full PBS fields
         # (nodes/walltime/note/nodelist) — same as single-host. Falls to
         # IRI only for non-PBS hosts like perlmutter/sirius.
@@ -448,7 +545,9 @@ def _status_fanout(
                     else None
                 )
                 if _want_q:
-                    jobs = [j for j in jobs if (j.queue or "").lower() == _want_q]
+                    jobs = [
+                        j for j in jobs if (j.queue or "").lower() == _want_q
+                    ]
                 if _want_s:
                     jobs = [j for j in jobs if j.state.lower() in _want_s]
             if limit:
@@ -602,9 +701,19 @@ def _status_fanout(
         # plus a leading Host column so cross-machine output is disambiguated.
         from rich.console import Console
         from rich.table import Table as _FanTable
+
         # Build a rich table mirroring _rich_table's 8-column layout, prepending Host.
         # Use _rich_table's helpers: _short_wall + state coloring.
-        _HEAD8 = ["JOBID", "S", "QUEUE", "NODES", "WALL", "ELAP", "JOBNAME", "NOTE"]
+        _HEAD8 = [
+            "JOBID",
+            "S",
+            "QUEUE",
+            "NODES",
+            "WALL",
+            "ELAP",
+            "JOBNAME",
+            "NOTE",
+        ]
         # Re-materialize display rows exactly like _rich_table, then add Host.
         smap_fan = {
             "active": "R",
@@ -662,6 +771,7 @@ def _status_fanout(
                 note,
             ]
             rows_fan.append(row[:ncols_fan])
+
         # Width-aware NOTE collapse (same as _rich_table).
         def _tbl_w(ws: list[int]) -> int:
             return sum(ws) + 3 * len(ws) + 1
@@ -669,8 +779,7 @@ def _status_fanout(
         def _widths_for_fan(rws: list[list[str]], n: int) -> list[int]:
             hdrs = _HEAD8[:n]
             return [
-                max(len(str(r[i])) for r in ([hdrs] + rws))
-                for i in range(n)
+                max(len(str(r[i])) for r in ([hdrs] + rws)) for i in range(n)
             ]
 
         widths_fan = _widths_for_fan(rows_fan, ncols_fan)
@@ -693,10 +802,14 @@ def _status_fanout(
         # Adjust for Host column width in TWf check.
         # Add 1 column + padding: re-check and re-collapse if needed.
         # Use actual max host width from data.
-        max_host_w = max(
-            len((j.raw or {}).get("_fanout_host", "") or "")
-            for j in all_jobs
-        ) if all_jobs else 4
+        max_host_w = (
+            max(
+                len((j.raw or {}).get("_fanout_host", "") or "")
+                for j in all_jobs
+            )
+            if all_jobs
+            else 4
+        )
         max_host_w = max(max_host_w, 4)  # "Host"
         # If still over, the Host column is non-negotiable — truncate NOTE further.
         # For fanout we keep it simple: render table with Host prepended and
@@ -742,15 +855,23 @@ def _status_fanout(
                 jid = rd[0]
                 if jid in dropped_fan:
                     j0 = next(
-                        (jj for jj in all_jobs if jj.job_id.split(".")[0] == jid),
+                        (
+                            jj
+                            for jj in all_jobs
+                            if jj.job_id.split(".")[0] == jid
+                        ),
                         None,
                     )
-                    col2 = _STATE_COLORS.get(j0.state.lower(), "") if j0 else ""
+                    col2 = (
+                        _STATE_COLORS.get(j0.state.lower(), "") if j0 else ""
+                    )
                     tag = f"[{col2}]{jid}[/{col2}]" if col2 else jid
                     c2.print(f"  {tag} [dim]{dropped_fan[jid]}[/dim]")
         # Running nodelist: group by job, respecting TWf.
         running_fan = [
-            j for j in all_jobs if j.state.lower() in ("active", "running", "r")
+            j
+            for j in all_jobs
+            if j.state.lower() in ("active", "running", "r")
         ]
         if running_fan:
             c2.print("")
@@ -769,7 +890,11 @@ def _status_fanout(
                     used += add
                 return shown, len(items) - len(shown)
 
-            rc_fan = _STATE_COLORS.get("active") or _STATE_COLORS.get("running") or ""
+            rc_fan = (
+                _STATE_COLORS.get("active")
+                or _STATE_COLORS.get("running")
+                or ""
+            )
             for j in running_fan:
                 hosts = getattr(j, "exec_hosts", None) or []
                 if not hosts:
@@ -796,16 +921,39 @@ def _status_fanout(
                     click.echo(f"[warn] {w}", err=True)
     else:
         # Piped fanout: same full qmert columns as single-host, plus Host prefix.
-        smap_p = {"active": "R", "running": "R", "queued": "Q", "held": "H", "failed": "F", "completed": "F", "canceled": "F", "new": "Q"}
+        smap_p = {
+            "active": "R",
+            "running": "R",
+            "queued": "Q",
+            "held": "H",
+            "failed": "F",
+            "completed": "F",
+            "canceled": "F",
+            "new": "Q",
+        }
         click.echo(
             f"{'HOST':<10} {'JOBID':<12} {'S':<1} {'QUEUE':<14} {'NODES':>5} {'WALL':>5} {'ELAP':>5} {'JOBNAME':<28} {'NOTE'}"
         )
         for j in all_jobs:
-            s = smap_p.get(j.state.lower(), j.state[:1].upper() if j.state else "?")
+            s = smap_p.get(
+                j.state.lower(), j.state[:1].upper() if j.state else "?"
+            )
             nodes = str(getattr(j, "nodes", None) or "—")
             wall = _short_wall(getattr(j, "walltime", None))
-            elap = _short_wall(getattr(j, "elapsed", None)) if getattr(j, "elapsed", None) else ("--" if j.state.lower() in ("queued", "held", "new") else "—")
-            host = (j.raw or {}).get("_fanout_host", "") if isinstance(j.raw, dict) else ""
+            elap = (
+                _short_wall(getattr(j, "elapsed", None))
+                if getattr(j, "elapsed", None)
+                else (
+                    "--"
+                    if j.state.lower() in ("queued", "held", "new")
+                    else "—"
+                )
+            )
+            host = (
+                (j.raw or {}).get("_fanout_host", "")
+                if isinstance(j.raw, dict)
+                else ""
+            )
             click.echo(
                 f"{host:<10} {j.job_id.split('.')[0]:<12} {s:<1} {(j.queue or '—'):<14} {nodes:>5} {wall:>5} {elap:>5} {(getattr(j, 'name', None) or '—'):<28} {(getattr(j, 'note', None) or '')}"
             )
@@ -947,7 +1095,9 @@ def _status_list_remote(
             owner=owner,
             as_json=None,
         )
-        jobs = _apply_list_filters(jobs, queue=queue, states=states, limit=limit)
+        jobs = _apply_list_filters(
+            jobs, queue=queue, states=states, limit=limit
+        )
         _render_list(jobs, host=host, as_json=as_json)
         return
     except Exception as e:
@@ -974,7 +1124,9 @@ def _status_list_remote(
             return
         except Exception:
             # IRI also failed — surface the original SSH transport note with context.
-            click.echo(f"note: IRI list failed ({ssh_exc}), giving up", err=True)
+            click.echo(
+                f"note: IRI list failed ({ssh_exc}), giving up", err=True
+            )
             raise
     # No IRI backend for this host — propagate the transport error.
     raise ssh_exc
