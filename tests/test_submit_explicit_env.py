@@ -206,9 +206,10 @@ def test_no_strict_is_restored_for_payload_after_setup(tmp_path):
         str(tmp_path),
         command=("false",),
     )
-    result = _run(script + "\necho payload-continued\n", tmp_path)
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "payload-continued"
+    result = _run(script, tmp_path)
+    # With exit-preservation (#246), payload failure now correctly exits non-zero
+    # regardless of --no-strict — the wrapper must not mask ezpz launch failures.
+    assert result.returncode != 0
 
 
 def test_python_executable_path_selects_its_environment(tmp_path):

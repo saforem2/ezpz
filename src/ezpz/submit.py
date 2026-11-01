@@ -29,7 +29,6 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -162,7 +161,10 @@ def generate_pbs_script(
         lines += ["", "# ── Environment setup ──", env_setup]
 
     run_cmd = f"ezpz launch {command}" if wrap_with_launch else command
-    lines += ["", run_cmd, ""]
+    if strict:
+        lines += ["", "set +e", run_cmd, "RC=$?", "set -e", 'exit "$RC"', ""]
+    else:
+        lines += ["", run_cmd, "RC=$?", 'exit "$RC"', ""]
     return "\n".join(lines)
 
 
@@ -248,7 +250,10 @@ def generate_slurm_script(
         lines += ["", "# ── Environment setup ──", env_setup]
 
     run_cmd = f"ezpz launch {command}" if wrap_with_launch else command
-    lines += ["", run_cmd, ""]
+    if strict:
+        lines += ["", "set +e", run_cmd, "RC=$?", "set -e", 'exit "$RC"', ""]
+    else:
+        lines += ["", run_cmd, "RC=$?", 'exit "$RC"', ""]
     return "\n".join(lines)
 
 
