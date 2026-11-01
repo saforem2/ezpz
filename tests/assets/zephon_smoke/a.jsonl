@@ -1,0 +1,8 @@
+{"text":"The river was quiet in the morning, and the hills held their blue shadows."}
+{"text":"A careful experiment begins by stating what it will measure and why."}
+{"text":"Small documents are enough to demonstrate a deterministic mixture."}
+{"text":"A checkpoint should preserve progress without preserving a machine layout."}
+{"text":"Token-aware mixing keeps document length from silently changing the requested proportions."}
+{"text":"The dataloader decides what to train on and in what order, and the pipeline turns samples into batches."}
+{"text":"Online tokenization avoids a separate preprocessing pass over the corpus."}
+{"text":"Sequence packing groups variable-length documents into fixed windows."}

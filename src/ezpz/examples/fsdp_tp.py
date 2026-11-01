@@ -3367,6 +3367,52 @@ def train(
         dataloader = data["dataloader"]
         if args.tp > 1:
             dataloader = TPBroadcastDataLoader(dataloader, tp_group)
+    elif (
+        getattr(args, "dataloader", "hf") == "zephon"
+        or getattr(args, "dataset", "").lower() == "zephon"
+    ):
+        # Explicit Zephon path (preferred). Also triggered by --dataset zephon for legacy scripts.
+        if args.dataset.lower() in {"zephon", "random", "mnist"}:
+            logger.info(
+                "Using Zephon dataloader (--dataloader zephon). Ignoring dataset=%s.",
+                args.dataset,
+            )
+        from ezpz.data.zephon import ZephonDataLoader
+
+        recipe = getattr(args, "zephon_recipe", None) or str(
+            Path(__file__).parent / "zephon" / "local_jsonl.toml"
+        )
+        dataloader = ZephonDataLoader(
+            recipe,
+            seq_len=args.seq_len,
+            microbatch_tokens=getattr(args, "microbatch_tokens", None),
+            aggregate_dir=getattr(args, "zephon_aggregate_dir", None)
+            or os.environ.get("ZEPHON_AGGREGATE_DIR"),
+            aggregate_store=getattr(args, "zephon_aggregate_store", None)
+            or os.environ.get("ZEPHON_AGGREGATE_STORE"),
+            run_id=getattr(args, "zephon_run_id", None)
+            or os.environ.get("ZEPHON_RUN_ID"),
+        )
+        # Restore deterministically on resume (no sampler — Zephon owns sharding).
+        if (
+            "resume_meta" in locals()
+            and resume_meta
+            and (
+                resume_meta.get("dataloader_state")
+                or resume_meta.get("zephon_state")
+            )
+        ):
+            dataloader.load_state(
+                resume_meta.get("dataloader_state")
+                or resume_meta.get("zephon_state")
+            )
+        dataset = None  # packing is inside Zephon; no hf_dataset
+        sampler = None
+        # Preserve TP semantics if the dataloader needs it (broadcast within TP handled by Zephon dp_degree).
+        if args.tp > 1:
+            from ezpz.data.distributed import TPBroadcastDataLoader
+
+            dataloader = TPBroadcastDataLoader(dataloader, tp_group)  # type: ignore[arg-type]
     elif args.dataset.lower() == "random":
         from ezpz.data.distributed import get_random_dataset_fsdp_tp
 
@@ -3382,7 +3428,6 @@ def train(
         dataset = data["dataset"]
         sampler = data["sampler"]
         dataloader = data["dataloader"]
-    # if args.dataset.lower() != "random":
     else:
         from ezpz.data.distributed import TPBroadcastDataLoader
 
@@ -3844,9 +3889,18 @@ def train(
                 _ckpt_meta = {
                     "tokens_seen": tokens_seen,
                     "epoch": epoch,
-                    # Next batch to run on resume within `epoch`.
                     "batch_offset": idx + 1,
                 }
+                # Persist Zephon elastic state so resume on a different DP degree stays deterministic.
+                try:
+                    if "dataloader" in locals() and hasattr(
+                        dataloader, "save_state"
+                    ):
+                        _dls = dataloader.save_state()  # type: ignore[union-attr]
+                        if _dls is not None:
+                            _ckpt_meta["dataloader_state"] = _dls
+                except Exception as _ze:
+                    logger.warning("Zephon save_state failed: %s", _ze)
                 if args.async_ckpt:
                     from ezpz.examples._checkpoint import (
                         finalize_fanout,

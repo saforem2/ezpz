@@ -47,7 +47,7 @@ def _require_zephon() -> Any:  # type: ignore[no-untyped-def]
     except ImportError as exc:
         raise ImportError(
             "Zephon is not installed. Install it with "
-            "`uv pip install \"ezpz[zephon]\"` or `uv pip install zephon`."
+            '`uv pip install "ezpz[zephon]"` or `uv pip install zephon`.'
         ) from exc
 
 
@@ -123,7 +123,9 @@ class ZephonDataLoader:
         self.seq_len = int(seq_len)
         self.microbatch_tokens = microbatch_tokens
         self.tokenizer_id = tokenizer_id
-        self.aggregate_dir = Path(aggregate_dir).resolve() if aggregate_dir else None
+        self.aggregate_dir = (
+            Path(aggregate_dir).resolve() if aggregate_dir else None
+        )
         self.aggregate_store = aggregate_store
         self.run_id = run_id or os.environ.get("ZEPHON_RUN_ID")
         self.extra = extra
@@ -161,29 +163,16 @@ class ZephonDataLoader:
 
     def _build_pipeline(self) -> Any:
         """Materialise the Zephon Pipeline from the TOML recipe."""
-        # Import here so the module works on torchless hosts (docs, type-check).
         from zephon import Pipeline  # type: ignore[import-not-found]
         from zephon.io import Dataset  # type: ignore[import-not-found]
         from zephon.work import MixtureSpec, StaticMixtureWorkSource  # type: ignore[import-not-found]
 
-        # The TOML recipe is Zephon's own format (sources + weights + packing).
-        # Rather than re-implement its parser, delegate to Zephon's loader
-        # when available and fall back to a minimal shim.
         try:
-            from zephon.config import load_recipe as _load_recipe  # type: ignore[import-not-found]
-
-            return _load_recipe(str(self.recipe))
-        except Exception:
-            pass
-
-        # Minimal shim: expect [[sources]] TOML; build the Pipeline directly.
-        # Lazy import keeps doc pages from needing tomllib on old Pythons.
-        try:
-            import tomllib  # py3.11+
+            import tomllib
 
             with open(self.recipe, "rb") as f:
                 cfg = tomllib.load(f)
-        except ImportError:  # py3.10 fallback
+        except ImportError:  # py3.10 fallback — needs tomli in zephon extra
             import tomli as tomllib  # type: ignore[import-not-found,no-redef]
 
             with open(self.recipe, "rb") as f:
@@ -196,35 +185,99 @@ class ZephonDataLoader:
         datasets = []
         weights: dict[str, float] = {}
         for src in sources_cfg:
+            raw_path = src["path"]
+            # hf:// URIs are zephon-native; local paths resolve vs recipe dir.
+            resolved = (
+                raw_path
+                if "://" in str(raw_path)
+                else str(Path(self.recipe).parent / raw_path)
+            )
             ds = Dataset.from_path(
-                src["name"], str(Path(self.recipe).parent / src["path"]), fmt=src.get("fmt", "jsonl")
+                src["name"], resolved, fmt=src.get("fmt") or None
             )
             datasets.append(ds)
             weights[src["name"]] = float(src.get("weight", 1.0))
 
-        work = StaticMixtureWorkSource(
-            datasets=datasets, mixture=MixtureSpec(weights), seed=int(cfg.get("seed", 42))
-        )
-
         chunk_size = int(cfg.get("chunk_size", self.seq_len))
         text_field = cfg.get("text_field", "text")
         tok_id = self.tokenizer_id or cfg.get("tokenizer_id") or "gpt2"
+        seed = int(cfg.get("seed", 42))
 
+        work = StaticMixtureWorkSource(
+            datasets=datasets,
+            mixture=MixtureSpec(weights),
+            seed=seed,
+            chunk_size=chunk_size,
+        )
+
+        # Packing + batching — real 0.2.1 API is pack_flat + batch, not Pipeline.pack
+        # (see torchtitan_recipes.zephon.dataloader). Mirrors that recipe.
+        microbatch = int(self.microbatch_tokens or chunk_size)
         pipeline = (
             Pipeline(work)
             .decode_text()
             .tokenize(tokenizer_id=tok_id, field=text_field, padding=True)
-            .pack(max_seq_len=self.seq_len, max_batch_size_tokens=self.microbatch_tokens or chunk_size)  # type: ignore[attr-defined]
+            .pack_flat(
+                max_length=self.seq_len,
+                pad_token_id=None,
+                drop_oversized=False,
+            )
+            .batch(microbatch, drop_last=True)
         )
-        # Batch op name varies by Zephon version; prefer batch over pack->batch.
-        # The pipeline is ready to iterate.
+
+        # Aggregate settings (elastic checkpoint), DP degree, and any caller options.
+        # Must be set before iteration so checkpoint aggregation knows where to store.
+        pipe_opts: dict[str, Any] = {}
+        if self.aggregate_dir is not None:
+            pipe_opts["aggregate_dir"] = str(self.aggregate_dir)
+        if self.aggregate_store is not None:
+            pipe_opts["aggregate_store"] = self.aggregate_store
+        if self.run_id is not None:
+            pipe_opts["run_id"] = self.run_id
+        # Pass through extra as runtime options (canonical_replicas etc.)
+        for k, v in (self.extra or {}).items():
+            if not k.startswith("_"):
+                pipe_opts[k] = v
+        if pipe_opts:
+            pipeline = pipeline.options(**pipe_opts)
+
+        # Apply deferred checkpoint state (save_state → new loader → load_state → build)
+        pending = (self.extra or {}).pop("_restore_state", None)
+        if pending is not None:
+            # _pipeline must be set for restore helper below
+            self._pipeline = pipeline
+            self._restore_pipeline(pending)
+            return self._pipeline
+
         return pipeline
+
+    def _restore_pipeline(self, state: Any) -> None:
+        assert self._pipeline is not None
+        pipe = self._pipeline
+        # Zephon 0.2.1 checkpoint API is checkpoint()/restore(); fall back to load_state variants.
+        for attr in ("restore", "load_state", "load_state_dict"):
+            if hasattr(pipe, attr):
+                try:
+                    getattr(pipe, attr)(state)
+                    return
+                except Exception as exc:
+                    raise ValueError(
+                        f"Zephon checkpoint incompatible: {exc}"
+                    ) from exc
+        raise ValueError(
+            "Zephon pipeline has no restore method; checkpoint cannot be applied"
+        )
 
     # ── Iter / checkpoint ──────────────────────────────────────────
 
     def __iter__(self) -> Iterator[Any]:
         if self._pipeline is None:
             self._pipeline = self._build_pipeline()
+            # If _build_pipeline already applied a deferred restore, _restore_state is gone;
+            # otherwise consume it now (covers direct Pipeline reuse).
+            pending = (self.extra or {}).pop("_restore_state", None)
+            if pending is not None:
+                self._restore_pipeline(pending)
         self._iterator = iter(self._pipeline)
         return self
 
@@ -238,36 +291,29 @@ class ZephonDataLoader:
             return batch.to_training()
         return batch
 
-    def save_state(self) -> dict[str, Any] | None:
-        """Return a checkpointable state dict, or None if not supported."""
+    def save_state(self) -> Any:
+        """Return a checkpointable state; raises if checkpoint fails."""
         pipe = self._pipeline
         if pipe is None:
             return None
-        for attr in ("save_state", "checkpoint", "state_dict"):
+        for attr in ("checkpoint", "save_state", "state_dict"):
             if hasattr(pipe, attr):
                 try:
-                    return getattr(pipe, attr)()  # type: ignore[no-any-return]
+                    return getattr(pipe, attr)()
                 except Exception:
-                    continue
+                    # checkpoint/restore failure is not a "fresh loader" signal — re-raise
+                    raise
         return None
 
-    def load_state(self, state: dict[str, Any] | None) -> None:
-        """Restore from :meth:`save_state` (may be None for fresh runs)."""
+    def load_state(self, state: Any | None) -> None:
+        """Restore from :meth:`save_state` (may be None for fresh runs); raises on corrupt state."""
         if state is None:
             return
         pipe = self._pipeline
         if pipe is None:
-            # Store for lazy build
             self.extra["_restore_state"] = state
             return
-        for attr in ("load_state", "restore", "load_state_dict"):
-            if hasattr(pipe, attr):
-                try:
-                    getattr(pipe, attr)(state)
-                    return
-                except Exception:
-                    continue
-        logger.warning("ZephonDataLoader: could not restore state; no loader method matched")
+        self._restore_pipeline(state)
 
     def __len__(self) -> int:
         # Some callers probe len(dataloader); Zephon is streaming/unknown.
