@@ -38,6 +38,14 @@ from typing import Any, Iterator
 
 logger = logging.getLogger(__name__)
 
+# Optional globusfs bridge — no-op if globusfs not installed
+try:
+    from ezpz.data.zephon_gcs_globus import register_globusfs_with_zephon as _register_globus
+
+    _register_globus()
+except Exception:
+    pass
+
 
 def _require_zephon() -> Any:  # type: ignore[no-untyped-def]
     try:

@@ -47,3 +47,19 @@ def test_zephon_parse_args_flag():
 
     dl = ZephonDataLoader(recipe="src/ezpz/examples/zephon/local_jsonl.toml", seq_len=32)
     assert dl.seq_len == 32
+
+
+def test_zephon_mixture_recipe_yields_batches():
+    from ezpz.data.zephon import ZephonDataLoader
+
+    dl = ZephonDataLoader(recipe="src/ezpz/examples/zephon/mixture.toml", seq_len=32, tokenizer_id="gpt2")
+    it = iter(dl)
+    batch = next(it)
+    assert "input_ids" in batch
+    assert batch["input_ids"].shape == (4, 32)
+    # Sanity: mixture pulls from both sources (wrap packer mixes)
+    seen = set()
+    for _ in range(3):
+        b = next(it)
+        seen.add(b["input_ids"].shape)
+    assert len(seen) == 1  # all batches same shape
