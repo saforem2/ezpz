@@ -12,6 +12,18 @@ For a full walkthrough with real terminal output, see the
 uv pip install git+https://github.com/saforem2/ezpz
 ```
 
+??? tip "Try the latest without installing"
+
+    Always run the bleeding-edge `main` with zero install — great for `ezpz status` from a login node:
+
+    ```bash
+    alias ezpzx='uvx "git+https://github.com/saforem2/ezpz"'
+    ezpzx status          # same as ezpz status, always latest
+    ezpzx submit --help   # any subcommand works
+    ```
+
+    Once you're happy, promote to a real install with the block above.
+
 ??? tip "Don't have `uv`?"
 
     Install it first (one-liner, no Python needed):
