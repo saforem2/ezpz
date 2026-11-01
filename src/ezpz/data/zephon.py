@@ -219,6 +219,7 @@ class ZephonDataLoader:
             .tokenize(tokenizer_id=tok_id, field=text_field, padding=True)
             .pack_flat(
                 max_length=self.seq_len,
+                algorithm="wrap",
                 pad_token_id=None,
                 drop_oversized=False,
             )

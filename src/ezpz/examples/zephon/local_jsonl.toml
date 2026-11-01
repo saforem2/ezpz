@@ -1,5 +1,6 @@
 # Minimal local-JSONL recipe for Zephon smoke tests.
-# Paths are resolved relative to THIS file (same as torchtitan_recipes.zephon).
+# Paths are resolved relative to THIS file. Each source points at a
+# directory of *.jsonl shards (Zephon requires directory, not file).
 
 text_field = "text"
 seed = 42
@@ -7,12 +8,12 @@ chunk_size = 4
 
 [[sources]]
 name = "a"
-path = "../../../tests/assets/zephon_smoke/a.jsonl"
+path = "../../../../tests/assets/zephon_smoke/shard_a"
 fmt = "jsonl"
 weight = 1.0
 
 [[sources]]
 name = "b"
-path = "../../../tests/assets/zephon_smoke/b.jsonl"
+path = "../../../../tests/assets/zephon_smoke/shard_b"
 fmt = "jsonl"
 weight = 1.0
