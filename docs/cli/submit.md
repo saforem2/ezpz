@@ -6,10 +6,18 @@ the command line.
 ## Environment setup
 
 Choose the environment explicitly before submitting. `--env PATH` selects an
-existing venv, conda prefix, or Python installation on the job's machine.
-`--env-setup-script PATH` sources your site-specific shell script **before**
-selecting that environment. Either option replaces managed environment setup;
-ezpz does not download scripts or install packages into your explicit environment.
+existing venv, conda prefix, Python installation, **or a `tar-env` tarball**
+(`*.tar.gz`/`*.tgz`/`*.tar` — extracts to `/tmp/$PBS_JOBID-env` and activates
+from there; see [`ezpz yeet`](./yeet.md) and [`ezpz tar-env`](./tar-env.md)).
+`--env` is smart: a `venv/` path activates that venv, a `bin/python3` path
+selects that executable, and a `setup.sh` path is auto-routed as a shell
+script (`--env ./setup.sh` ⇢ `--env-setup-script ./setup.sh`). `--env-setup-script PATH`
+sources your site-specific shell script **before** selecting that environment.
+`--module-load / --ml / --module MOD` is sugar for `module load MOD` lines in
+the job shell (repeatable: `--ml cray-mpich --ml PrgEnv-gnu`), composable with
+`--env` but not with `--env-setup-script` — one source of truth for module init.
+Either form replaces managed environment setup; ezpz does not download scripts or
+install packages into your explicit environment.
 
 ```bash
 # Replace ACCOUNT and /shared/PROJECT/USER paths with real target-side values.
@@ -20,6 +28,11 @@ ezpz submit aurora --dry-run -N 2 -q debug -A ACCOUNT \
     --env /shared/PROJECT/USER/venvs/train \
     -- python3 -m ezpz.examples.test --model debug
 ```
+
+For a pre-built tarball (from `ezpz tar-env`), pass the tarball itself:
+`--env /shared/PROJECT/USER/venvs/train.tar.gz` — the job script extracts it to
+a job-unique `/tmp` dir (`$PBS_JOBID` / `$SLURM_JOB_ID`) and activates from there.
+Stage the tarball on shared storage; ezpz does not upload it.
 
 An environment directory does not automatically load site modules. Put those
 prerequisites in the setup script. Script-only mode owns the complete setup;
