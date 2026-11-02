@@ -53,13 +53,21 @@ import click
     "env_path",
     default=None,
     metavar="PATH",
-    help="Target-side venv/conda/Python prefix or Python executable path.",
+    help="Target-side venv/conda/Python prefix, Python executable, or shell script. A .sh path is auto-routed as --env-setup-script.",
 )
 @click.option(
     "--env-setup-script",
     default=None,
     metavar="PATH",
-    help="Shell script to source on the job machine before selecting --env.",
+    help="Shell script to source on the job machine before selecting --env. Mutually-exclusive with an auto-routed --env script.",
+)
+@click.option(
+    "--module-load",
+    "--module",
+    "--ml",
+    multiple=True,
+    metavar="MOD",
+    help="Module to `module load` in the job shell (repeatable: --ml MOD1 --ml MOD2). Composable with --env; mutually exclusive with --env-setup-script.",
 )
 @click.option(
     "--dry-run",
@@ -138,6 +146,7 @@ def submit_cmd(
     scheduler: str | None,
     env_path: str | None,
     env_setup_script: str | None,
+    module_load: tuple[str, ...],
     dry_run: bool,
     launch: bool,
     gpus_per_node: int | None,
@@ -157,6 +166,26 @@ def submit_cmd(
     """
     from ezpz.submit import submit
 
+    # --env sugar: a .sh is a script, not an env. Auto-route it to
+    # --env-setup-script so `ezpz submit --env ./setup.sh` DTRT.
+    if env_path is not None and env_path.strip():
+        candidate_env = env_path.strip()
+        if candidate_env.endswith(".sh") or candidate_env.endswith(".bash"):
+            if env_setup_script is not None:
+                raise click.UsageError(
+                    "--env looks like a shell script (*.sh/*.bash) — "
+                    "use --env and --env-setup-script together correctly, "
+                    "or pass the script only via --env-setup-script."
+                )
+            if module_load:
+                raise click.UsageError(
+                    "--module-load/--ml is not valid with an --env that is a shell script. "
+                    "Put `module load` lines inside that script, or use "
+                    "`--ml MOD --env /path/to/venv` instead."
+                )
+            env_setup_script = candidate_env
+            env_path = None
+
     for option, value in (
         ("--env", env_path),
         ("--env-setup-script", env_setup_script),
@@ -164,6 +193,21 @@ def submit_cmd(
         if value is not None and not value.strip():
             raise click.BadParameter(
                 "expected a non-empty target-side path", param_hint=option
+            )
+
+    # --env-setup-script and --module-load sugar the same source line;
+    # require one or the other, not both, so there's a single source of
+    # truth for module initialization in the generated job script.
+    if env_setup_script is not None and module_load:
+        raise click.UsageError(
+            "Use either --env-setup-script or --module-load/--ml/--module, not both. "
+            "Put your `module load` lines in the script, or use "
+            "`--ml MOD --env /path/to/venv` to synthesize one."
+        )
+    for mod in module_load or ():
+        if not mod or not mod.strip():
+            raise click.BadParameter(
+                "expected a non-empty module name", param_hint="--module-load"
             )
 
     # Positional remote sugar: ezpz submit aurora -- ...  ≡  --remote aurora
@@ -239,6 +283,25 @@ def submit_cmd(
                 err=True,
             )
 
+    # Synthesize raw shell for --module-load, then hand it directly to
+    # resolved_env so we bypass the "source $path" interpretation in
+    # build_env_setup.  --module-load is sugar for module-load lines, not a
+    # file path, and should compose with --env (load modules, then select env).
+    synthesized_env = None
+    if module_load:
+        if env_setup_script is not None:
+            raise click.UsageError(
+                "Use either --env-setup-script or --module-load/--ml/--module, not both."
+            )
+        from ezpz.remote_env import _strict_setup
+
+        _mod_lines = [
+            f"module load {shlex.quote(m.strip())}"
+            for m in module_load
+            if m and m.strip()
+        ]
+        synthesized_env = _strict_setup(_mod_lines) if _mod_lines else None
+
     from ezpz.remote_env import build_env_setup
 
     resolved_env = build_env_setup(
@@ -247,6 +310,16 @@ def submit_cmd(
         require_ezpz=launch
         or bool(command and Path(command[0]).name == "ezpz"),
     )
+    # Prepend synthesized module-load shell when requested; it should run
+    # before env selection (login shell: modules → then env) and compose
+    # correctly with --env.  --env-setup-script + --ml is already rejected
+    # above, so this is --ml [ + --env] only.
+    if synthesized_env is not None:
+        resolved_env = (
+            f"{synthesized_env}\n{resolved_env}"
+            if resolved_env
+            else synthesized_env
+        )
 
     if remote:
         _submit_remote(
