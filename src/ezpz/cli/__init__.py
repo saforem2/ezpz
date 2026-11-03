@@ -10,7 +10,13 @@ import click
 from ezpz.__about__ import __version__
 from ezpz.cli.launch_cmd import launch_cmd
 from ezpz.cli.status_cancel_cmd import cancel_cmd, status_cmd
-from ezpz.cli.remote_extra_cmd import extend_cmd, incidents_cmd, resources_cmd, update_job_cmd
+from ezpz.cli.watch_cmd import watch_cmd
+from ezpz.cli.remote_extra_cmd import (
+    extend_cmd,
+    incidents_cmd,
+    resources_cmd,
+    update_job_cmd,
+)
 from ezpz.cli.completion_cmd import completion_cmd
 from ezpz.cli.fetch_cmd import fetch_cmd, logs_cmd
 from ezpz.cli.submit_cmd import submit_cmd
@@ -46,6 +52,7 @@ main.add_command(launch_cmd, name="launch")
 main.add_command(submit_cmd, name="submit")
 
 main.add_command(status_cmd, name="status")
+main.add_command(watch_cmd, name="watch")
 
 main.add_command(cancel_cmd, name="cancel")
 main.add_command(extend_cmd, name="extend")
@@ -66,15 +73,14 @@ main.add_command(update_cmd, name="update")
 def tar_env_cmd(args: tuple[str, ...]) -> None:
     """Create (or locate) a tarball for the current environment."""
     from ezpz.utils import tar_env as tar_env_module
+
     rc = tar_env_module.main()
 
     # rc = tar_env_module.main(_ensure_sequence(args))
     # _handle_exit_code(rc)
 
 
-@main.command(
-    name="yeet", context_settings={"ignore_unknown_options": True}
-)
+@main.command(name="yeet", context_settings={"ignore_unknown_options": True})
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 def yeet_cmd(args: tuple[str, ...]) -> None:
     """Distribute files (envs, models, datasets, etc.) to worker nodes via parallel rsync.
@@ -111,7 +117,8 @@ def yeet_cmd(args: tuple[str, ...]) -> None:
 
 
 @main.command(
-    name="yeet-env", context_settings={"ignore_unknown_options": True},
+    name="yeet-env",
+    context_settings={"ignore_unknown_options": True},
     hidden=True,
 )
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
@@ -119,7 +126,8 @@ def yeet_env_cmd(args: tuple[str, ...]) -> None:
     """Deprecated alias for ``ezpz yeet``."""
     click.secho(
         "ezpz yeet-env is deprecated; use 'ezpz yeet' as a drop-in replacement",
-        fg="yellow", err=True,
+        fg="yellow",
+        err=True,
     )
     from ezpz.utils import yeet_env as yeet_env_module
 
