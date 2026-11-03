@@ -28,7 +28,7 @@ EXPECTED_DEFAULTS = {
     "pytorch_profiler_repeat": 5,
     "profile_memory": True,
     "record_shapes": True,
-    "with_stack": True,
+    "with_stack": False,
     "with_flops": True,
     "with_modules": True,
     "acc_events": False,
