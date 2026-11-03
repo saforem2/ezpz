@@ -3,9 +3,33 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 import click
+
+
+def _force_color() -> bool:
+    return bool(os.environ.get("FORCE_COLOR"))
+
+
+def _is_tty(stream=None) -> bool:
+    s = stream or sys.stdout
+    try:
+        if s.isatty():
+            return True
+    except Exception:
+        pass
+    return _force_color()
+
+
+def _console(**kw):
+    from rich.console import Console as _C
+
+    if _force_color():
+        kw.setdefault("force_terminal", True)
+    return _C(**kw)
+
 
 _STATE_COLORS = {
     "active": "green",
@@ -44,7 +68,6 @@ def _rich_table(jobs, *, host: str | None = None):
     Includes width-aware NOTE collapse to sub-lines and a running-job nodelist
     block, matching qmert's terminal-width negotiation.
     """
-    from rich.console import Console
     from rich.table import Table
     import shutil
 
@@ -170,10 +193,10 @@ def _rich_table(jobs, *, host: str | None = None):
             styled.append(rd[7])
         table.add_row(*styled)
     table.box = __import__("rich.box", fromlist=["ROUNDED"]).ROUNDED
-    Console().print(table)
+    _console().print(table)
 
     # ── sub-lines: dropped notes, then running-job node lists (width-aware, like qmert) ──
-    c2 = Console()
+    c2 = _console()
 
     def fit_items(items: list[str], prefix_len: int, suffix_tmpl: str):
         if TW <= 0:
@@ -229,9 +252,7 @@ def _rich_table(jobs, *, host: str | None = None):
 
 
 def _rich_single(st, *, via: str = ""):
-    from rich.console import Console
-
-    c = Console()
+    c = _console()
     color = _STATE_COLORS.get(st.state.lower(), "")
     state = f"[{color}]{st.state}[/{color}]" if color else st.state
     ec = st.exit_code if st.exit_code is not None else "—"
@@ -696,10 +717,9 @@ def _status_fanout(
             )
         )
         return
-    if sys.stdout.isatty():
+    if _is_tty():
         # Fan-out rich table: reuse the same qmert columns as single-host,
         # plus a leading Host column so cross-machine output is disambiguated.
-        from rich.console import Console
         from rich.table import Table as _FanTable
 
         # Build a rich table mirroring _rich_table's 8-column layout, prepending Host.
@@ -845,9 +865,9 @@ def _status_fanout(
                 styled.append(rd[7])
             table.add_row(*styled)
         table.box = __import__("rich.box", fromlist=["ROUNDED"]).ROUNDED
-        Console().print(table)
+        _console().print(table)
         # Sub-lines: dropped notes + running nodelist (mirrors _rich_table / qmert).
-        c2 = Console()
+        c2 = _console()
         if dropped_fan:
             c2.print("")
             c2.print("[dim]notes:[/dim]")
@@ -911,10 +931,8 @@ def _status_fanout(
                 c2.print(f"  {rc_tag} [dim]({len(hosts)})[/dim]: {line}")
         if warnings and not as_json:
             for w in warnings[:3]:
-                if sys.stderr.isatty():
-                    from rich.console import Console
-
-                    Console(stderr=True).print(
+                if _is_tty(sys.stderr):
+                    _console(stderr=True).print(
                         f"[[yellow]⚠️ warn[/yellow]] {w}"
                     )
                 else:
@@ -1033,7 +1051,7 @@ def _render_single(st, *, as_json: bool, via: str = ""):
                 }
             )
         )
-    elif sys.stdout.isatty():
+    elif _is_tty():
         _rich_single(st, via=via)
     else:
         ec = st.exit_code if st.exit_code is not None else "-"
@@ -1154,7 +1172,7 @@ def _render_list(jobs, *, host: str | None = None, as_json: bool = False):
                 indent=2,
             )
         )
-    elif sys.stdout.isatty():
+    elif _is_tty():
         _rich_table(jobs, host=host)
     else:
         if not jobs:
@@ -1238,11 +1256,7 @@ def _status_via_ssh(host, job_id, owner=None):  # noqa: ARG001 — owner kept fo
     argv = ["ssh", "-o", "BatchMode=yes", host, cmd]
     proc = subprocess.run(argv, capture_output=True, text=True, timeout=30)
     # If not TTY (piped), keep raw qstat for grep/awk compat; rich only on TTY
-    if (
-        not sys.stdout.isatty()
-        or proc.returncode != 0
-        or not proc.stdout.strip()
-    ):
+    if not _is_tty() or proc.returncode != 0 or not proc.stdout.strip():
         sys.stdout.write(proc.stdout)
         sys.stderr.write(proc.stderr)
         sys.exit(proc.returncode)
