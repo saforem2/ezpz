@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+
+{% block extrahead %}
+  {# Preconnect to third-party font/CDN origins before CSS/JS fetches #}
+  <link rel="preconnect" href="https://iosevka-webfonts.github.io" crossorigin>
+  <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  {# Preload Iosevka CSS so font-face discovery starts earlier #}
+  <link rel="preload" as="style" href="https://iosevka-webfonts.github.io/iosevka/Iosevka.css">
+  <link rel="preload" as="style" href="https://iosevka-webfonts.github.io/iosevka-fixed/iosevka-fixed.css">
+{% endblock %}
