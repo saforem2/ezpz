@@ -27,79 +27,66 @@ produced a result.
 To exercise a working tree instead of the installed package:
 
 ```bash
-uv pip install -e .   # editable install (preferred)
+uv pip install -e .   # editable install
+# or, without installing:
+export PYTHONPATH="$PWD/src:$PYTHONPATH"
 ```
 
 ## Prefer `ezpz submit` over hand-writing a batch script
 
-`ezpz submit` generates the scheduler script for you (PBS/SLURM auto-detected)
-and auto-wraps with `ezpz launch` (hostfile + CPU binding). Always prefer it —
-see the `/ezpz` skill for the full dispatch table.
-
-Quick smoke (repeat per host; `ezpz status` fanout picks them all up):
+`ezpz submit` generates the scheduler script for you — PBS or SLURM,
+detected automatically — and **wraps the command in `ezpz launch` by
+default**, so the CPU-binding mistake below cannot happen:
 
 ```bash
-NOW=$(date "+%Y-%m-%d-%H%M%S"); tdir="ezpz-${NOW}"; mkdir -p "${tdir}"
-ezpz submit --remote aurora -N 1 -q debug --time 00:30:00 --workdir $HOME/$tdir \
-  -- python3 -m ezpz.examples.test
-ezpz status --limit 10; ezpz fetch $JID --remote aurora --lines 40  # watch
+ezpz submit -N 2 -q debug -A datascience --filesystems home,flare \
+    -- python3 -m ezpz.examples.fsdp_tp --model large --tp 2
+
+# Perlmutter (SLURM) needs the GPU directives:
+ezpz submit -N 2 -q debug -A m4388_g -C gpu \
+    --gpus-per-node 4 --ntasks-per-node 4 \
+    -- python3 -m ezpz.examples.fsdp_tp --tp 2
+
+ezpz submit --dry-run ...       # print the script, submit nothing
+ezpz submit --no-strict ...     # omit `set -e` for multi-arm scripts
+ezpz submit job.sh -N 4         # or submit an existing script
 ```
 
-- Login-node smoke: `source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env` → `ezpz launch python3 -m ezpz.examples.test` (or `ezpzx launch …` without installing).
-- Multi-node: `ezpz submit -N 2 -q debug -A datascience --filesystems home,flare -- python3 -m ezpz.examples.fsdp_tp --model large --tp 2`; Perlmutter adds `--gpus-per-node 4 -C gpu`.
-- `ezpz submit --dry-run` first — prints exactly what would be submitted.
+`--dry-run` first is worth the two seconds: it prints exactly what would
+be submitted.
 
-When you must hand-write a script, run `.agent/skills/alcf-preflight/preflight.sh` first — see the `/alcf-preflight` skill.
+When you must hand-write a script, start with `#!/bin/bash --login`
+and run `.agent/skills/alcf-preflight/preflight.sh` — see `/alcf-preflight`.
 
 The rest of this section is for when you genuinely need a hand-written
 script (multi-arm experiment harnesses, custom staging). Everything in
-it is what `ezpz submit` already does correctly when you don't.
+it is what `ezpz submit` already does correctly.
 
-## Inside a batch script, three things change
+## Inside a batch script, two things matter
 
-### 1. Compute nodes have no outbound internet
+Use `ezpz submit` and both are handled — see `/ezpz`. The rest of this
+section is the "why".
 
-`source <(curl -fsSL https://ezpz.cool/utils.sh)` **times out after
-~270 s** and then silently leaves the environment unconfigured. Source
-the repo's own copy — the same file:
+### 1. Compute nodes need the proxy for outbound internet
 
-```bash
-source "${D}/src/ezpz/bin/utils.sh"
-ezpz_setup_env || { echo "FATAL: ezpz_setup_env failed"; exit 1; }
-```
-
-The same applies to anything else you fetch. `curl`ing a script *inside*
-the job returns an empty file, and the failure surfaces far downstream —
-`rc=127`, every function undefined — which reads like the code is broken
-rather than absent. Stage from a login node (which does have network)
-onto a shared filesystem, then **assert it arrived**:
+`source <(curl -fsSL https://ezpz.cool/utils.sh)` works on compute
+nodes once the ALCF proxy is set — `ezpz submit` emits it at the top of
+every job script:
 
 ```bash
-# on a login node, beforehand. ALCF login nodes need the proxy too --
-# see "Downloads on ALCF need the proxy" below; without it this curl
-# hangs rather than failing fast.
-export https_proxy=http://proxy.alcf.anl.gov:3128   # ALCF only
-mkdir -p "${HOME}/stage"
-
-# Download to a temp file and move only on success: `curl` can be
-# interrupted after writing some bytes, and a PARTIAL file passes a
-# non-empty check while failing later with missing functions or a
-# syntax error -- worse than an empty one, because it looks staged.
-curl -fsSL --retry 3 \
-    https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/utils.sh \
-    -o "${HOME}/stage/utils.sh.part" \
-  && bash -n "${HOME}/stage/utils.sh.part" \
-  && mv "${HOME}/stage/utils.sh.part" "${HOME}/stage/utils.sh" \
-  || { echo "FATAL: staging failed"; rm -f "${HOME}/stage/utils.sh.part"; exit 1; }
-
-# in the job:
-U="${HOME}/stage/utils.sh"
-[[ -s "$U" ]] || { echo "FATAL: ${U} missing/empty — stage it first"; exit 1; }
+export http_proxy=http://proxy.alcf.anl.gov:3128
+export https_proxy=http://proxy.alcf.anl.gov:3128
+export no_proxy=localhost,127.0.0.1,*.alcf.anl.gov,*.anl.gov
 ```
 
-Also note the HF caches: `hf`/`hf_trainer`/`fsdp_tp`/`diffusion` examples
-need their datasets and models downloaded ahead of time. **Check the
-cache the libraries will actually read**, not a hard-coded path —
+For interactive shells, put the same three exports in `~/.bashrc`
+(or `~/.zshrc`) so every `ssh aurora` / `qsub` inherits them. The earlier
+version of this section told you to stage `utils.sh` onto a shared FS to
+work around "no internet" — that workaround is what broke the smokes.
+
+Also note the HF caches: `hf`/`hf_trainer`/`fsdp_tp`/`diffusion`
+examples need their datasets and models downloaded ahead of time. **Check
+the cache the libraries will actually read**, not a hard-coded path —
 `HF_HOME`, `HF_HUB_CACHE` and `HF_DATASETS_CACHE` all override the
 `~/.cache/huggingface` default, and the documented Perlmutter setup sets
 `HF_HOME="$SCRATCH/.cache/hf"`:
@@ -110,49 +97,15 @@ ls "${HF_HUB_CACHE:-${HF_HOME:-$HOME/.cache/huggingface}/hub}"
 
 A cache miss on a compute node is an offline error, not a code bug.
 
-### 2. PBS runs your script under a NON-login shell
+### 2. PBS scripts must be login shells
 
-`qsub ... -- /bin/bash script.sh` gives you a shell where `module` does
-not exist. Worse, sourcing Lmod's `init/bash` alone defines `module` but
-leaves **`MODULEPATH` empty**, so every `module load` becomes a silent
-no-op ("No modules loaded") and `ezpz_setup_env` fails downstream with
-the misleading `CONDA_PREFIX still not set`.
-
-Source the login profile, and assert it worked.
-
-**Do not use `set -u` in these scripts at all.** The module system is
-not `set -u`-clean, in two separate places:
-
-- `/etc/profile` references unset variables, so sourcing it under
-  `set -u` aborts the script on that line — walltime `00:00:00`,
-  `Exit_status=1`, **empty `.o` and `.e`**, not one line printed.
-- Deferring `set -u` past the profile is *still* not enough: Lmod's
-  `init/bash` reads `$ZSH_EVAL_CONTEXT`, and `ezpz_setup_env` re-enters
-  the module machinery long after the preamble, so it dies mid-setup
-  with `ZSH_EVAL_CONTEXT: unbound variable`.
-
-Reproduce both with `bash -c 'set -u; source /etc/profile'`.
-
-```bash
-set -o pipefail                       # and NOT set -u, anywhere
-source /etc/profile 2>/dev/null || true
-command -v module >/dev/null 2>&1 || { echo "FATAL: no module cmd"; exit 1; }
-[ -n "${MODULEPATH:-}" ] || { echo "FATAL: MODULEPATH empty"; exit 1; }
-```
-
-Use `${VAR:-default}` everywhere and explicit `[ -n ... ]` checks
-instead — on these systems the shell strictness has to give way to the
-module system, not the other way round.
-
-An empty `.o`/`.e` with zero walltime always means the script died in
-its own preamble. Check `qstat -xf <jobid>` for `Exit_status` and
-`resources_used.walltime` before assuming anything about the run.
-
-**Dry-run the preamble before submitting.** Everything above the first
-`probe` call can be pasted into `ssh <host> bash -c '...'` and checked
-in seconds. Six Sunspot submissions were spent discovering preamble bugs
-one allocation at a time; each would have been caught by a five-second
-dry run.
+Use `#!/bin/bash --login` as the shebang on any script you `qsub` —
+it sources the login profile and `MODULEPATH`, so `module load` works.
+`ezpz submit` already emits `--login`. The earlier version of this
+section told you to `source /etc/profile` by hand and warned against
+`set -u` — all subsumed by `--login`. Only hand-write a batch script
+when `ezpz submit` doesn't cover your case, and then start from that
+shebang and `.agent/skills/alcf-preflight`.
 
 ### 3. Login-node checks do not predict compute-node behaviour
 
@@ -592,7 +545,7 @@ Read `docs/guides/remote-submission.md` + the CLI pages under `docs/cli/` for th
 - **Remote workdir:** choose it before environment setup, even with overrides. PBS defaults to `$PBS_O_WORKDIR/ezpz-$PBS_JOBID`, Slurm to `$SLURM_SUBMIT_DIR/ezpz-$SLURM_JOB_ID`; both use a job-specific `$HOME` fallback. Bases must be shared FS, never assume node-local `/tmp` is shared. Explicit `--workdir` is used exactly (no suffix) and must already exist. `mkdir`/`cd` failures stop the job even with `--no-strict`. Local submissions retain their cwd.
 - **Offline setup:** with neither environment option, the remote managed bootstrap still downloads `utils.sh` and may install ezpz. Compute-node internet is not guaranteed; prefer a staged setup script and prebuilt environment. Recognized ALCF targets get proxy settings before setup; non-ALCF targets do not.
 - **Read stdout:** `ezpz fetch JOB_ID --remote sunspot --lines 80 --no-dedupe` takes one PBS stdout snapshot, not a live follow. IRI may discover the path but reading still needs SSH. The current fallback is PBS `qstat`, not Slurm. Do not promise `--out err/both` or portable per-example `logs`: stream selection is incomplete and the current `logs` workdir resolver is site-specific. See `docs/cli/fetch.md`.
-- **Preflight (hand-written scripts):** `.agent/skills/alcf-preflight/preflight.sh <worktree> [venv] [machine] [job-script]` — see the `/alcf-preflight` skill. `ezpz submit` already covers most gates; use preflight for experiment harnesses and worktree/venv staging.
+- **Preflight (hand-written scripts):** `.agent/skills/alcf-preflight/preflight.sh <worktree> [venv] [machine] [job-script]` — see `/alcf-preflight`. `ezpz submit` already covers most gates; use preflight for experiment harnesses and worktree/venv staging.
 - **Useful commands:** `ezpz status --json`, `ezpz cancel --dry-run`, `ezpz extend --time`, `ezpz resources`, `ezpz incidents`, `ezpz fetch`, `ezpz logs --example test`, `ezpz completion`.
 
 ## Known open issues
