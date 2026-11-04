@@ -4,7 +4,7 @@ Guidance for AI coding assistants (and humans) working in this repo.
 
 > [!IMPORTANT]
 > **Running anything on an HPC system (Aurora, Sunspot, Polaris,
-> Perlmutter)? Read [`SKILL.md`](SKILL.md) FIRST.**
+> Perlmutter)? Use `/ezpz` (`.agent/skills/ezpz/SKILL.md`) FIRST.**
 >
 > Job submission, environment setup, and — more importantly — the
 > failure modes that silently produce *wrong results* rather than
@@ -21,7 +21,7 @@ Guidance for AI coding assistants (and humans) working in this repo.
   never hand-rolled `qsub`/`sbatch` scripts or bare `mpiexec`. `ezpz launch`
   computes the hostfile, rank counts and `--cpu-bind` map; bare `mpiexec`
   supplies no CPU binding at all. `ezpz submit --dry-run` prints the
-  generated script without submitting. See `SKILL.md`.
+  generated script without submitting. See `/ezpz` (`.agent/skills/ezpz/SKILL.md`).
 - `ezpz test` can be used as a distributed PyTorch smoke test to verify:
 
   1. `ezpz` installed correctly
