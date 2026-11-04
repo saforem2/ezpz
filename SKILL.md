@@ -27,9 +27,7 @@ produced a result.
 To exercise a working tree instead of the installed package:
 
 ```bash
-uv pip install -e .   # editable install
-# or, without installing:
-export PYTHONPATH="$PWD/src:$PYTHONPATH"
+uv pip install -e .   # editable install (preferred)
 ```
 
 ## Prefer `ezpz submit` over hand-writing a batch script
@@ -57,50 +55,89 @@ be submitted.
 
 When you must hand-write a script, run `.agents/skills/alcf-preflight/preflight.sh` first — see `.agents/skills/alcf-preflight/SKILL.md`.
 
+## Smoke: `ezpz submit` → `ezpz status` → `ezpz fetch`
+
+The smoke contract is four lines — no `PYTHONPATH`, no `--workdir` pinning:
+
+```bash
+NOW=$(date "+%Y-%m-%d-%H%M%S"); tdir="ezpz-${NOW}"; mkdir "${tdir}" && cd "${tdir}" && pwd
+source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
+uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz"
+ezpz launch python3 -m ezpz.examples.test
+```
+
+Via `ezpz submit` (proxy + `--login` + workdir handled by the wrapper) it is
+one line per machine — no staging, no `sys.path.insert`, no `PYTHONPATH`:
+
+```bash
+NOW=$(date "+%Y-%m-%d-%H%M%S"); tdir="ezpz-${NOW}"; ssh $host "mkdir $tdir && echo \$HOME/$tdir"
+ezpz submit --remote $host -N 1 -q debug --time 00:30:00 --workdir $HOME/$tdir -- bash -c \
+  'source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env \
+   && uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz" \
+   && ezpz launch python3 -m ezpz.examples.test'
+```
+
+Then watch with zero scraping:
+
+```bash
+ezpz status                      # fanout live across all ALCF hosts (rich table)
+ezpz status --remote sirius      # per-host live
+ezpz fetch $JID --remote sirius  # tail the log (dedupe on by default; --no-dedupe for verbatim)
+ezpz logs $JID --remote sunspot --example test --lines 20  # per-example, not spool
+```
+
+Do not hand-build `qsub … -- /bin/bash $D/script.sh` with a separate
+`smoke-wrap.sh` + `smoke-job.sh` — that trio is how the harness grew to
+`127 ezpz: command not found` with stale `0.31.1`/`0.24.0` venvs.
+
 The rest of this section is for when you genuinely need a hand-written
 script (multi-arm experiment harnesses, custom staging). Everything in
 it is what `ezpz submit` already does correctly.
 
 ## Inside a batch script, three things change
 
-### 1. Compute nodes have no outbound internet
+### 1. Always set the ALCF proxy — then `curl` from anywhere
 
-`source <(curl -fsSL https://ezpz.cool/utils.sh)` **times out after
-~270 s** and then silently leaves the environment unconfigured. Source
-the repo's own copy — the same file:
+ALCF login **and** compute nodes need the proxy to reach the internet.
+Without it, `curl` hangs until it times out (~270 s) and returns an empty
+file — every function undefined, `rc=127`, reads like the code is broken
+rather than absent. Set the proxy as the first thing in every ALCF shell
+before any `curl`, `pip install`, or `uvx` call:
 
 ```bash
-source "${D}/src/ezpz/bin/utils.sh"
-ezpz_setup_env || { echo "FATAL: ezpz_setup_env failed"; exit 1; }
+export http_proxy=http://proxy.alcf.anl.gov:3128
+export https_proxy=http://proxy.alcf.anl.gov:3128
+export no_proxy=localhost,127.0.0.1,*.alcf.anl.gov,*.anl.gov
+# also the upper-case variants some tools read:
+export HTTP_PROXY="$http_proxy" HTTPS_PROXY="$https_proxy" ftp_proxy="$http_proxy"
 ```
 
-The same applies to anything else you fetch. `curl`ing a script *inside*
-the job returns an empty file, and the failure surfaces far downstream —
-`rc=127`, every function undefined — which reads like the code is broken
-rather than absent. Stage from a login node (which does have network)
-onto a shared filesystem, then **assert it arrived**:
+With the proxy set, `curl https://ezpz.cool/utils.sh` works on compute nodes
+too — `ezpz submit` sets these proxy vars explicitly for recognized ALCF
+targets (aurora / polaris / sunspot / sophia) before any setup. The canonical
+setup lives at [ezpz.cool/utils.sh](https://ezpz.cool/utils.sh) — prefer it
+over a raw GitHub `raw.githubusercontent.com` URL:
 
 ```bash
-# on a login node, beforehand. ALCF login nodes need the proxy too --
-# see "Downloads on ALCF need the proxy" below; without it this curl
-# hangs rather than failing fast.
-export https_proxy=http://proxy.alcf.anl.gov:3128   # ALCF only
-mkdir -p "${HOME}/stage"
+# on ALCF (login or compute) — proxy already set above
+source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
+# or inside a hand-written PBS job (same proxy required):
+source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env || { echo "FATAL: ezpz_setup_env failed"; exit 1; }
+```
 
-# Download to a temp file and move only on success: `curl` can be
-# interrupted after writing some bytes, and a PARTIAL file passes a
-# non-empty check while failing later with missing functions or a
-# syntax error -- worse than an empty one, because it looks staged.
-curl -fsSL --retry 3 \
-    https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/utils.sh \
-    -o "${HOME}/stage/utils.sh.part" \
+If your job must run fully offline, stage from a login node instead:
+
+```bash
+# on a login node, beforehand — proxy required here too for the download
+mkdir -p "${HOME}/stage"
+curl -fsSL --retry 3 https://ezpz.cool/utils.sh -o "${HOME}/stage/utils.sh.part" \
   && bash -n "${HOME}/stage/utils.sh.part" \
   && mv "${HOME}/stage/utils.sh.part" "${HOME}/stage/utils.sh" \
   || { echo "FATAL: staging failed"; rm -f "${HOME}/stage/utils.sh.part"; exit 1; }
-
-# in the job:
+# in the job (no curl):
 U="${HOME}/stage/utils.sh"
 [[ -s "$U" ]] || { echo "FATAL: ${U} missing/empty — stage it first"; exit 1; }
+source "$U" && ezpz_setup_env
 ```
 
 Also note the HF caches: `hf`/`hf_trainer`/`fsdp_tp`/`diffusion` examples
@@ -562,13 +599,16 @@ Rules that come from real misreadings, not style preference:
 
   Check `ldd .../mpi4py/MPI*.so | grep mpi` shows no `not found`.
 
-- **Downloads on ALCF need the proxy.** Nothing reaches the internet
-  from a login node without:
+- **Downloads on ALCF need the proxy.** Login **and** compute nodes
+  need the proxy to reach the internet (see §1 above). Without it `curl`
+  hangs ~270 s and returns an empty file — looks like staged code is
+  missing. Set before any download:
 
   ```bash
   export http_proxy=http://proxy.alcf.anl.gov:3128
   export https_proxy=http://proxy.alcf.anl.gov:3128
   export no_proxy=localhost,127.0.0.1,*.alcf.anl.gov,*.anl.gov
+  export HTTP_PROXY="$http_proxy" HTTPS_PROXY="$https_proxy" ftp_proxy="$http_proxy"
   ```
 
 - **torch 2.13 renamed FSDP2's collectives.**
@@ -596,7 +636,13 @@ Read `docs/guides/remote-submission.md` + the CLI pages under `docs/cli/` for th
 - **Choose the environment first:** `--env PATH` selects an existing venv/conda/Python prefix (or a Python executable under `PREFIX/bin/`). `--env-setup-script PATH` sources a target-side shell script **before** selecting `--env`; use both for module-dependent environments. Neither option uploads files. Scripts/environment paths must be visible to compute nodes; prefer absolute shared paths.
 - **Explicit means explicit:** either environment option replaces the managed environment bootstrap, without injecting a curl download or package install. Env-only does not load site modules; script-only owns all setup. Install ezpz in the selected environment before using the launch wrapper. Existing scheduler scripts reject these flags; put setup inside the script. Migrate the old script/inline `--env` to `--env-setup-script`; the Python API's `env_setup` remains raw shell.
 - **Remote workdir:** choose it before environment setup, even with overrides. PBS defaults to `$PBS_O_WORKDIR/ezpz-$PBS_JOBID`, Slurm to `$SLURM_SUBMIT_DIR/ezpz-$SLURM_JOB_ID`; both use a job-specific `$HOME` fallback. Bases must be shared FS, never assume node-local `/tmp` is shared. Explicit `--workdir` is used exactly (no suffix) and must already exist. `mkdir`/`cd` failures stop the job even with `--no-strict`. Local submissions retain their cwd.
-- **Offline setup:** with neither environment option, the remote managed bootstrap still downloads `utils.sh` and may install ezpz. Compute-node internet is not guaranteed; prefer a staged setup script and prebuilt environment. Recognized ALCF targets get proxy settings before setup; non-ALCF targets do not.
+- **Setup needs the proxy on ALCF:** the remote/managed bootstrap
+  downloads `utils.sh` (and may install ezpz) over the network. On ALCF
+  this works — `ezpz submit` sets the proxy for recognized targets
+  (aurora / polaris / sunspot / sophia) before setup — but any hand-written
+  path that skips the proxy will hang and return an empty file (see §1).
+  For fully-offline runs, stage `utils.sh` and a prebuilt env beforehand.
+  Non-ALCF targets get no proxy by default.
 - **Read stdout:** `ezpz fetch JOB_ID --remote sunspot --lines 80 --no-dedupe` takes one PBS stdout snapshot, not a live follow. IRI may discover the path but reading still needs SSH. The current fallback is PBS `qstat`, not Slurm. Do not promise `--out err/both` or portable per-example `logs`: stream selection is incomplete and the current `logs` workdir resolver is site-specific. See `docs/cli/fetch.md`.
 - **Preflight (hand-written scripts):** `.agents/skills/alcf-preflight/preflight.sh <worktree> [venv] [machine] [job-script]` — see `.agents/skills/alcf-preflight/SKILL.md`. `ezpz submit` already covers most gates; use preflight for experiment harnesses and worktree/venv staging.
 - **Useful commands:** `ezpz status --json`, `ezpz cancel --dry-run`, `ezpz extend --time`, `ezpz resources`, `ezpz incidents`, `ezpz fetch`, `ezpz logs --example test`, `ezpz completion`.

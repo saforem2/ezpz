@@ -64,6 +64,7 @@ Guidance for AI coding assistants (and humans) working in this repo.
   Never lump unrelated changes into one commit.
 - Follow the existing commit style: `type(scope): message`
   (e.g. `fix(history): ...`, `feat(examples): ...`, `chore(todo): ...`).
+- **Never merge a PR with unresolved review comments.** Before merging, fetch `gh api repos/saforem2/ezpz/pulls/<N>/comments` (inline threads) and `gh pr view <N> --json comments,reviews` (conversation threads). Verify every inline thread is `isResolved` via the GraphQL `reviewThreads` query (or replied + resolved in the UI). Address each finding with a code change or a written justification, and re-request review if needed. A green CI alone does not clear a review (see PR #280 / review `5588767600`: `micromamba activate` P2 at `src/ezpz/bin/utils.sh:1026` — swallowed failure).
 - **Every PR needs a `release:` label before merge**: one of
   `release:patch`, `release:minor`, `release:major`, or `release:skip`.
   There is no default-to-patch — pick deliberately. Merging triggers
