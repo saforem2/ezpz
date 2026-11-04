@@ -30,9 +30,11 @@ REMOTE_WORKDIR_AUTO = (
 REMOTE_ENV_SETUP = """\
 # ── ezpz environment (self-bootstrapping) ──
 source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
-# Ensure ezpz is present in the active env (handles fresh/empty venvs)
-if ! python3 -c "import ezpz" 2>/dev/null; then
-  echo "[ezpz] not found in active env — installing..." >&2
+# Ensure ezpz console script exists — the base conda may ship an ancient
+# ``ezpz`` (v0.8.0/0.24.0) with no console script where ``import ezpz``
+# passes but ``ezpz launch`` fails with ``command not found``.
+if ! command -v ezpz >/dev/null 2>&1; then
+  echo "[ezpz] ezpz not found in active env — installing..." >&2
   uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz" || \\
   python3 -m pip install --no-cache "git+https://github.com/saforem2/ezpz"
 fi
