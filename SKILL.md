@@ -49,14 +49,12 @@ ezpz launch python3 -m ezpz.examples.test
 ezpzx launch python3 -m ezpz.examples.test  # TMPDIR=$(pwd) uvx git+https://github.com/saforem2/ezpz
 ```
 
-Or via `ezpz submit` (proxy + workdir handled):
+Or via `ezpz submit` (proxy + workdir + launch handled):
 
 ```bash
 NOW=$(date "+%Y-%m-%d-%H%M%S"); tdir="ezpz-${NOW}"; mkdir -p "${tdir}"
 ezpz submit --remote aurora -N 1 -q debug --time 00:30:00 --workdir $HOME/$tdir \
-  -- bash -c 'source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env \
-  && uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz[cli]" \
-  && ezpz launch python3 -m ezpz.examples.test'
+  -- python3 -m ezpz.examples.test
 # Then watch:
 ezpz status --limit 10          # fanout live across all ALCF
 ezpz status --remote aurora     # per-host
@@ -70,9 +68,7 @@ Smoke across all ALCF (repeat the `tdir`+`submit` block per host,
 # Minimal smoke (any ALCF host, fresh tdir isolates the venv):
 NOW=$(date "+%Y-%m-%d-%H%M%S"); tdir="ezpz-${NOW}"; mkdir -p "${tdir}"
 ezpz submit --remote aurora -N 1 -q debug --time 00:30:00 --workdir $HOME/$tdir \
-  -- bash -c 'source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env \
-  && uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz[cli]" \
-  && ezpz launch python3 -m ezpz.examples.test'
+  -- python3 -m ezpz.examples.test
 ezpz status --limit 8
 ezpz fetch $JID --remote aurora --lines 40
 
