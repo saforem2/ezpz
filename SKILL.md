@@ -27,9 +27,7 @@ produced a result.
 To exercise a working tree instead of the installed package:
 
 ```bash
-uv pip install -e .   # editable install
-# or, without installing:
-export PYTHONPATH="$PWD/src:$PYTHONPATH"
+uv pip install -e .   # editable install (preferred)
 ```
 
 ## Prefer `ezpz submit` over hand-writing a batch script
@@ -56,6 +54,41 @@ ezpz submit job.sh -N 4         # or submit an existing script
 be submitted.
 
 When you must hand-write a script, run `.agents/skills/alcf-preflight/preflight.sh` first — see `.agents/skills/alcf-preflight/SKILL.md`.
+
+## Smoke: `ezpz submit` → `ezpz status` → `ezpz fetch`
+
+The smoke contract is four lines — no `PYTHONPATH`, no `--workdir` pinning:
+
+```bash
+NOW=$(date "+%Y-%m-%d-%H%M%S"); tdir="ezpz-${NOW}"; mkdir "${tdir}" && cd "${tdir}" && pwd
+source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
+uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz"
+ezpz launch python3 -m ezpz.examples.test
+```
+
+Via `ezpz submit` (proxy + `--login` + workdir handled by the wrapper) it is
+one line per machine — no staging, no `sys.path.insert`, no `PYTHONPATH`:
+
+```bash
+NOW=$(date "+%Y-%m-%d-%H%M%S"); tdir="ezpz-${NOW}"; ssh $host "mkdir $tdir && echo \$HOME/$tdir"
+ezpz submit --remote $host -N 1 -q debug --time 00:30:00 --workdir $HOME/$tdir -- bash -c \
+  'source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env \
+   && uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz" \
+   && ezpz launch python3 -m ezpz.examples.test'
+```
+
+Then watch with zero scraping:
+
+```bash
+ezpz status                      # fanout live across all ALCF hosts (rich table)
+ezpz status --remote sirius      # per-host live
+ezpz fetch $JID --remote sirius  # tail the log (dedupe on by default; --no-dedupe for verbatim)
+ezpz logs $JID --remote sunspot --example test --lines 20  # per-example, not spool
+```
+
+Do not hand-build `qsub … -- /bin/bash $D/script.sh` with a separate
+`smoke-wrap.sh` + `smoke-job.sh` — that trio is how the harness grew to
+`127 ezpz: command not found` with stale `0.31.1`/`0.24.0` venvs.
 
 The rest of this section is for when you genuinely need a hand-written
 script (multi-arm experiment harnesses, custom staging). Everything in
