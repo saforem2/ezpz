@@ -4,6 +4,7 @@ zite/
 _site/*
 site1
 *.html
+!docs/overrides/**/*.html
 event-*.json
 docs/old
 *core\.*
