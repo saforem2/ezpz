@@ -20,7 +20,7 @@ Hand-written scripts reproduce the same five omissions repeatedly. When you must
 ## Running the gate
 
 ```bash
-.agents/skills/alcf-preflight/preflight.sh <worktree> [venv] [machine] [job-script]
+.agent/skills/alcf-preflight/preflight.sh <worktree> [venv] [machine] [job-script]
 ```
 
 Exits non-zero on any `BAD` line. Every gate below is enforced there.

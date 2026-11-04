@@ -32,93 +32,28 @@ uv pip install -e .   # editable install (preferred)
 
 ## Prefer `ezpz submit` over hand-writing a batch script
 
-`ezpz submit` generates the scheduler script for you — PBS or SLURM,
-detected automatically — and **wraps the command in `ezpz launch` by
-default**, so the CPU-binding mistake below cannot happen. Use a fresh
-`ezpz-<timestamp>` workdir per submit so each job gets an isolated venv
-(no stale ``pr-verify*` caches with stale versions):
+`ezpz submit` generates the scheduler script for you (PBS/SLURM auto-detected)
+and auto-wraps with `ezpz launch` (hostfile + CPU binding). Always prefer it —
+see the `/ezpz` skill for the full dispatch table.
 
-```bash
-NOW=$(date "+%Y-%m-%d-%H%M%S"); tdir="ezpz-${NOW}"; mkdir -p "${tdir}" && cd "${tdir}"
-source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
-uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz[cli]"
-ezpz launch python3 -m ezpz.examples.test
-# Or without installing (after sourcing utils.sh):
-ezpzx launch python3 -m ezpz.examples.test  # TMPDIR=$(pwd) uvx git+https://github.com/saforem2/ezpz
-```
-
-Or via `ezpz submit` (proxy + workdir + launch handled):
+Quick smoke (repeat per host; `ezpz status` fanout picks them all up):
 
 ```bash
 NOW=$(date "+%Y-%m-%d-%H%M%S"); tdir="ezpz-${NOW}"; mkdir -p "${tdir}"
 ezpz submit --remote aurora -N 1 -q debug --time 00:30:00 --workdir $HOME/$tdir \
   -- python3 -m ezpz.examples.test
-# Then watch:
-ezpz status --limit 10          # fanout live across all ALCF
-ezpz status --remote aurora     # per-host
-ezpz fetch $JID --remote aurora --lines 40  # tail output
+ezpz status --limit 10; ezpz fetch $JID --remote aurora --lines 40  # watch
 ```
 
-Smoke across all ALCF (repeat the `tdir`+`submit` block per host,
-`ezpz status` fanout picks up all of them):
+- Login-node smoke: `source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env` → `ezpz launch python3 -m ezpz.examples.test` (or `ezpzx launch …` without installing).
+- Multi-node: `ezpz submit -N 2 -q debug -A datascience --filesystems home,flare -- python3 -m ezpz.examples.fsdp_tp --model large --tp 2`; Perlmutter adds `--gpus-per-node 4 -C gpu`.
+- `ezpz submit --dry-run` first — prints exactly what would be submitted.
 
-```bash
-# Minimal smoke (any ALCF host, fresh tdir isolates the venv):
-NOW=$(date "+%Y-%m-%d-%H%M%S"); tdir="ezpz-${NOW}"; mkdir -p "${tdir}"
-ezpz submit --remote aurora -N 1 -q debug --time 00:30:00 --workdir $HOME/$tdir \
-  -- python3 -m ezpz.examples.test
-ezpz status --limit 8
-ezpz fetch $JID --remote aurora --lines 40
-
-# Multi-node example:
-ezpz submit -N 2 -q debug -A datascience --filesystems home,flare \
-    -- python3 -m ezpz.examples.fsdp_tp --model large --tp 2
-
-# Perlmutter (SLURM) needs the GPU directives:
-ezpz submit -N 2 -q debug -A m4388_g -C gpu \
-    --gpus-per-node 4 --ntasks-per-node 4 \
-    -- python3 -m ezpz.examples.fsdp_tp --tp 2
-
-ezpz submit --dry-run ...       # print the script, submit nothing
-ezpz submit --no-strict ...     # omit `set -e` for multi-arm scripts
-ezpz submit job.sh -N 4         # or submit an existing script
-```
-
-`--dry-run` first is worth the two seconds: it prints exactly what would
-be submitted.
-
-When you must hand-write a script, run `.agents/skills/alcf-preflight/preflight.sh` first — see `.agents/skills/alcf-preflight/SKILL.md`.
-
-## Smoke: `ezpz submit` → `ezpz status` → `ezpz fetch`
-
-The smoke contract is four lines — no `PYTHONPATH`, no `--workdir` pinning:
-
-```bash
-NOW=$(date "+%Y-%m-%d-%H%M%S"); tdir="ezpz-${NOW}"; mkdir "${tdir}" && cd "${tdir}" && pwd
-source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
-uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz"
-ezpz launch python3 -m ezpz.examples.test
-```
-
-Via `ezpz submit` (proxy + `--login` + workdir + `ezpz launch` handled
-by the wrapper) it is one `submit` per machine — no staging, no
-`sys.path.insert`, no `PYTHONPATH`, no `bash -c` wrapper:
-
-```bash
-NOW=$(date "+%Y-%m-%d-%H%M%S"); tdir="ezpz-${NOW}"; mkdir -p "${tdir}"
-ezpz submit --remote aurora -N 1 -q debug --time 00:30:00 --workdir $HOME/$tdir \
-  -- python3 -m ezpz.examples.test
-# Then watch:
-ezpz status --limit 10; ezpz fetch $JID --remote aurora --lines 40
-```
-
-Do not hand-build `qsub … -- /bin/bash $D/script.sh` with a separate
-`smoke-wrap.sh` + `smoke-job.sh` — that trio is how the harness grew to
-`127 ezpz: command not found` with stale `0.31.1`/`0.24.0` venvs.
+When you must hand-write a script, run `.agent/skills/alcf-preflight/preflight.sh` first — see the `/alcf-preflight` skill.
 
 The rest of this section is for when you genuinely need a hand-written
 script (multi-arm experiment harnesses, custom staging). Everything in
-it is what `ezpz submit` already does correctly.
+it is what `ezpz submit` already does correctly when you don't.
 
 ## Inside a batch script, three things change
 
@@ -657,7 +592,7 @@ Read `docs/guides/remote-submission.md` + the CLI pages under `docs/cli/` for th
 - **Remote workdir:** choose it before environment setup, even with overrides. PBS defaults to `$PBS_O_WORKDIR/ezpz-$PBS_JOBID`, Slurm to `$SLURM_SUBMIT_DIR/ezpz-$SLURM_JOB_ID`; both use a job-specific `$HOME` fallback. Bases must be shared FS, never assume node-local `/tmp` is shared. Explicit `--workdir` is used exactly (no suffix) and must already exist. `mkdir`/`cd` failures stop the job even with `--no-strict`. Local submissions retain their cwd.
 - **Offline setup:** with neither environment option, the remote managed bootstrap still downloads `utils.sh` and may install ezpz. Compute-node internet is not guaranteed; prefer a staged setup script and prebuilt environment. Recognized ALCF targets get proxy settings before setup; non-ALCF targets do not.
 - **Read stdout:** `ezpz fetch JOB_ID --remote sunspot --lines 80 --no-dedupe` takes one PBS stdout snapshot, not a live follow. IRI may discover the path but reading still needs SSH. The current fallback is PBS `qstat`, not Slurm. Do not promise `--out err/both` or portable per-example `logs`: stream selection is incomplete and the current `logs` workdir resolver is site-specific. See `docs/cli/fetch.md`.
-- **Preflight (hand-written scripts):** `.agents/skills/alcf-preflight/preflight.sh <worktree> [venv] [machine] [job-script]` — see `.agents/skills/alcf-preflight/SKILL.md`. `ezpz submit` already covers most gates; use preflight for experiment harnesses and worktree/venv staging.
+- **Preflight (hand-written scripts):** `.agent/skills/alcf-preflight/preflight.sh <worktree> [venv] [machine] [job-script]` — see the `/alcf-preflight` skill. `ezpz submit` already covers most gates; use preflight for experiment harnesses and worktree/venv staging.
 - **Useful commands:** `ezpz status --json`, `ezpz cancel --dry-run`, `ezpz extend --time`, `ezpz resources`, `ezpz incidents`, `ezpz fetch`, `ezpz logs --example test`, `ezpz completion`.
 
 ## Known open issues
