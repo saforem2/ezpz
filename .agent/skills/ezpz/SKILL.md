@@ -12,7 +12,7 @@ This skill is the **HPC operator's dispatch table**. The canonical ambient doc i
 | intent | command | notes |
 |---|---|---|
 | smoke on login node | `source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env` → `ezpz launch python3 -m ezpz.examples.test` | 4-line contract, see below |
-| remote smoke (one node) | `ezpz submit --remote <host> -N 1 -q debug --time 00:30:00 --workdir $HOME/$tdir -- python3 -m ezpz.examples.test` | then `ezpz status` / `ezpz fetch` |
+| remote smoke (one node) | `ezpz submit --remote <host> -N 1 -q debug --time 00:30:00 -- python3 -m ezpz.examples.test` | then `ezpz status` / `ezpz fetch` |
 | multi-node training | `ezpz submit -N 2 -q debug -A <acct> --filesystems home,flare -- python3 -m ezpz.examples.fsdp_tp --model large --tp 2` | add `--gpus-per-node`, `-C gpu` on Perlmutter |
 | watch progress | `ezpz status --limit 10` (fanout), `ezpz status --remote <host> --limit 5`, `ezpz fetch $JID --remote <host> --lines 40` | fanout is zero-scrape; see `docs/cli/status.md`, `docs/cli/fetch.md` |
 | cancel / extend | `ezpz cancel --dry-run`, `ezpz cancel $JID --remote <host>`, `ezpz extend $JID --time 02:00:00` | IRI only; see `docs/cli/cancel.md`, `docs/cli/extend.md` |
@@ -34,14 +34,15 @@ uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz
 ezpz launch python3 -m ezpz.examples.test
 
 # Via ezpz submit (preferred — proxy + --login + workdir + launch handled):
-NOW=$(date "+%Y-%m-%d-%H%M%S"); tdir="ezpz-${NOW}"; mkdir -p "${tdir}"
-ezpz submit --remote aurora -N 1 -q debug --time 00:30:00 --workdir $HOME/$tdir \
-  -- python3 -m ezpz.examples.test
+# Default (no --workdir): job gets its own WORKDIR on shared FS — nothing to create.
+ezpz submit --remote aurora -N 1 -q debug --time 00:30:00 -- python3 -m ezpz.examples.test
 # Then watch:
 ezpz status --limit 10; ezpz fetch $JID --remote aurora --lines 40
 ```
 
-Repeat the `tdir`+`submit` block per host; `ezpz status` fanout picks them all up in one table.
+Repeat the submit per host; `ezpz status` fanout picks them all up in one table.
+Only pass `--workdir` when you control the directory and have already created
+it on the target host (otherwise `cd $WORKDIR` fails before setup).
 
 Anti-pattern: hand-building `qsub … -- /bin/bash $D/script.sh` with a separate `smoke-wrap.sh` + `smoke-job.sh` — that trio is how the harness grew stale-venv `127 ezpz: command not found` (`0.31.1`/`0.24.0`).
 

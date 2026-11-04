@@ -34,80 +34,27 @@ export PYTHONPATH="$PWD/src:$PYTHONPATH"
 
 ## Prefer `ezpz submit` over hand-writing a batch script
 
-`ezpz submit` generates the scheduler script for you — PBS or SLURM,
-detected automatically — and **wraps the command in `ezpz launch` by
-default**, so the CPU-binding mistake below cannot happen:
-
-```bash
-ezpz submit -N 2 -q debug -A datascience --filesystems home,flare \
-    -- python3 -m ezpz.examples.fsdp_tp --model large --tp 2
-
-# Perlmutter (SLURM) needs the GPU directives:
-ezpz submit -N 2 -q debug -A m4388_g -C gpu \
-    --gpus-per-node 4 --ntasks-per-node 4 \
-    -- python3 -m ezpz.examples.fsdp_tp --tp 2
-
-ezpz submit --dry-run ...       # print the script, submit nothing
-ezpz submit --no-strict ...     # omit `set -e` for multi-arm scripts
-ezpz submit job.sh -N 4         # or submit an existing script
-```
-
-`--dry-run` first is worth the two seconds: it prints exactly what would
-be submitted.
+See `.agent/skills/ezpz` (`/ezpz`): submit/status/fetch/launch, smoke
+contract, and flags. `ezpz submit` generates the scheduler script
+(PBS/SLURM auto-detected), emits `#!/bin/bash --login` + proxy +
+workdir, and wraps with `ezpz launch` (hostfile + CPU binding). Use
+`--dry-run` first — it prints exactly what would be submitted.
 
 When you must hand-write a script, start with `#!/bin/bash --login`
 and run `.agent/skills/alcf-preflight/preflight.sh` — see `/alcf-preflight`.
 
-The rest of this section is for when you genuinely need a hand-written
-script (multi-arm experiment harnesses, custom staging). Everything in
-it is what `ezpz submit` already does correctly.
+### Compute nodes need the proxy; PBS scripts must be login shells
 
-## Inside a batch script, two things matter
+- Proxy: `http_proxy=http://proxy.alcf.anl.gov:3128` (and
+  `https_proxy`/`no_proxy`) — `ezpz submit` emits this; for interactive
+  shells put it in `~/.bashrc`/`~/.zshrc`.
+- Shebang: `#!/bin/bash --login` sets `MODULEPATH` so `module load`
+  works; `ezpz submit` already emits it.
 
-Use `ezpz submit` and both are handled — see `/ezpz`. The rest of this
-section is the "why".
+HF caches (`hf`/`hf_trainer`/`fsdp_tp`/`diffusion`) must be pre-staged:
+`ls "${HF_HUB_CACHE:-${HF_HOME:-$HOME/.cache/huggingface}/hub}"`.
 
-### 1. Compute nodes need the proxy for outbound internet
-
-`source <(curl -fsSL https://ezpz.cool/utils.sh)` works on compute
-nodes once the ALCF proxy is set — `ezpz submit` emits it at the top of
-every job script:
-
-```bash
-export http_proxy=http://proxy.alcf.anl.gov:3128
-export https_proxy=http://proxy.alcf.anl.gov:3128
-export no_proxy=localhost,127.0.0.1,*.alcf.anl.gov,*.anl.gov
-```
-
-For interactive shells, put the same three exports in `~/.bashrc`
-(or `~/.zshrc`) so every `ssh aurora` / `qsub` inherits them. The earlier
-version of this section told you to stage `utils.sh` onto a shared FS to
-work around "no internet" — that workaround is what broke the smokes.
-
-Also note the HF caches: `hf`/`hf_trainer`/`fsdp_tp`/`diffusion`
-examples need their datasets and models downloaded ahead of time. **Check
-the cache the libraries will actually read**, not a hard-coded path —
-`HF_HOME`, `HF_HUB_CACHE` and `HF_DATASETS_CACHE` all override the
-`~/.cache/huggingface` default, and the documented Perlmutter setup sets
-`HF_HOME="$SCRATCH/.cache/hf"`:
-
-```bash
-ls "${HF_HUB_CACHE:-${HF_HOME:-$HOME/.cache/huggingface}/hub}"
-```
-
-A cache miss on a compute node is an offline error, not a code bug.
-
-### 2. PBS scripts must be login shells
-
-Use `#!/bin/bash --login` as the shebang on any script you `qsub` —
-it sources the login profile and `MODULEPATH`, so `module load` works.
-`ezpz submit` already emits `--login`. The earlier version of this
-section told you to `source /etc/profile` by hand and warned against
-`set -u` — all subsumed by `--login`. Only hand-write a batch script
-when `ezpz submit` doesn't cover your case, and then start from that
-shebang and `.agent/skills/alcf-preflight`.
-
-### 3. Login-node checks do not predict compute-node behaviour
+### Login-node checks do not predict compute-node behaviour
 
 `ezpz_setup_env` **fails on the Sunspot login node** (`CONDA_PREFIX
 still not set`) because `module load frameworks` is a compute-node
