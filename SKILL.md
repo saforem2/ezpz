@@ -36,9 +36,45 @@ export PYTHONPATH="$PWD/src:$PYTHONPATH"
 
 `ezpz submit` generates the scheduler script for you — PBS or SLURM,
 detected automatically — and **wraps the command in `ezpz launch` by
-default**, so the CPU-binding mistake below cannot happen:
+default**, so the CPU-binding mistake below cannot happen. Use a fresh
+`ezpz-<timestamp>` workdir per submit so each job gets an isolated venv
+(no stale ``pr-verify*` caches with stale versions):
 
 ```bash
+NOW=$(date "+%Y-%m-%d-%H%M%S"); tdir="ezpz-${NOW}"; mkdir -p "${tdir}" && cd "${tdir}"
+source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
+uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz"
+ezpz launch python3 -m ezpz.examples.test
+```
+
+Or via `ezpz submit` (proxy + workdir handled):
+
+```bash
+NOW=$(date "+%Y-%m-%d-%H%M%S"); tdir="ezpz-${NOW}"; mkdir -p "${tdir}"
+ezpz submit --remote aurora -N 1 -q debug --time 00:30:00 --workdir $HOME/$tdir \
+  -- bash -c 'source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env \
+  && uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz" \
+  && ezpz launch python3 -m ezpz.examples.test'
+# Then watch:
+ezpz status --limit 10          # fanout live across all ALCF
+ezpz status --remote aurora     # per-host
+ezpz fetch $JID --remote aurora --lines 40  # tail output
+```
+
+Smoke across all ALCF (repeat the `tdir`+`submit` block per host,
+`ezpz status` fanout picks up all of them):
+
+```bash
+# Minimal smoke (any ALCF host, fresh tdir isolates the venv):
+NOW=$(date "+%Y-%m-%d-%H%M%S"); tdir="ezpz-${NOW}"; mkdir -p "${tdir}"
+ezpz submit --remote aurora -N 1 -q debug --time 00:30:00 --workdir $HOME/$tdir \
+  -- bash -c 'source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env \
+  && uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz" \
+  && ezpz launch python3 -m ezpz.examples.test'
+ezpz status --limit 8
+ezpz fetch $JID --remote aurora --lines 40
+
+# Multi-node example:
 ezpz submit -N 2 -q debug -A datascience --filesystems home,flare \
     -- python3 -m ezpz.examples.fsdp_tp --model large --tp 2
 
