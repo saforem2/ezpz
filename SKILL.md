@@ -43,7 +43,7 @@ default**, so the CPU-binding mistake below cannot happen. Use a fresh
 ```bash
 NOW=$(date "+%Y-%m-%d-%H%M%S"); tdir="ezpz-${NOW}"; mkdir -p "${tdir}" && cd "${tdir}"
 source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
-uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz"
+uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz[cli]"
 ezpz launch python3 -m ezpz.examples.test
 ```
 
