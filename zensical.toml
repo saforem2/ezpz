@@ -332,6 +332,7 @@ invalid_link_anchors = true
 # Section for configuring theme options
 # ----------------------------------------------------------------------------
 [project.theme]
+font = false
 
 
 # change this to "classic" to use the traditional Material for MkDocs look.
@@ -544,22 +545,10 @@ scheme = "slate"
 toggle.icon = "lucide/moon"
 toggle.name = "Switch to system preference"
 
-# ----------------------------------------------------------------------------
-# In the "font" subsection you can configure the fonts used. By default, fonts
-# are loaded from Google Fonts, giving you a wide range of choices from a set
-# of suitably licensed fonts. There are options for a normal text font and for
-# a monospaced font used in code blocks.
-# ----------------------------------------------------------------------------
-# [project.theme.font] disabled: Iosevka is not on Google Fonts — the
-# default block in templates/base.html would emit a 400 from
-# fonts.googleapis.com (heading/text/code = "Iosevka Web"). Font faces
-# are loaded via extra_css (docs/assets/fonts/) and --font-family is set
-# in docs/stylesheets/theme.css, so no theme.font needed.
-[project.theme.font]
-heading = "Iosevka Web"
-text = "Iosevka Web"
-code = "Iosevka Fixed Web"
-font = false
+# Font autoloading disabled (font = false above). The theme's default
+# would fetch Iosevka from Google Fonts (400 — Iosevka is not there).
+# We use Iosevka via preconnect+preload in docs/overrides/main.html and
+# docs/stylesheets/theme.css instead.
 
 # ----------------------------------------------------------------------------
 # You can configure your own logo to be shown in the header using the "logo"
