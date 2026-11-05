@@ -73,7 +73,28 @@ def build_env_setup(
 
     Returns:
         Shell commands, or ``None`` to retain automatic setup.
+
+    Notes:
+        When neither *env_path* nor *setup_script* is given but
+        ``EZPZ_SETUP_ENV`` is set in the caller's environment, that value
+        is used implicitly (file → ``source <path>``, otherwise inline
+        shell). This keeps the ``--remote`` path consistent with the local
+        ``submit()`` path, which reads the same variable via
+        :func:`ezpz.submit.detect_env_setup`.
     """
+    # Implicit fallback: the submitter's EZPZ_SETUP_ENV selects the
+    # compute-side setup even for --remote. This is how a branch-tester
+    # tells the compute node to install a specific ref, e.g.
+    #   EZPZ_SETUP_ENV='source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env && uv pip install "git+https://github.com/saforem2/ezpz@feat/foo[zephon]"'
+    # must affect the remote script, not just local submits.
+    if env_path is None and setup_script is None:
+        import os
+
+        if os.environ.get("EZPZ_SETUP_ENV"):
+            from ezpz.submit import detect_env_setup
+
+            return _strict_setup([detect_env_setup()])
+        return None
     parts = []
     if env_path is not None:
         # Bind relative paths before a setup script can change directory.

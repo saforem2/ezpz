@@ -91,17 +91,17 @@ def resources_cmd(as_json, all_resources, limit):
         cmap={"up":"green","degraded":"yellow","down":"red","unknown":"dim","active":"green"}
         for r in sorted(norm, key=lambda x: x["name"]):
             c=cmap.get(r["status"], "")
-            st=f"[{c}]{r["status"]}[/{c}]" if c else r["status"]
+            st = f"[{c}]{r['status']}[/{c}]" if c else r["status"]
             short=r["id"][:8]+"…" if len(r["id"])>12 else r["id"]
             tbl.add_row(r["name"], short, st)
         Console().print(tbl)
-        c2=Console()
+        c2 = Console()
         for r in sorted(norm, key=lambda x: x["name"]):
-            c2.print(f"  [dim]{r["name"]}  {r["id"]}[/dim]")
+            c2.print(f"  [dim]{r['name']}  {r['id']}[/dim]")
     else:
-        click.echo(f"{"RESOURCE":<14} {"ID":<40} STATUS")
+        click.echo(f"{'RESOURCE':<14} {'ID':<40} STATUS")
         for r in sorted(norm, key=lambda x: x["name"]):
-            click.echo(f"{r["name"]:<14} {r["id"]:<40} {r["status"]}")
+            click.echo(f"{r['name']:<14} {r['id']:<40} {r['status']}")
 
 @click.command("incidents")
 @click.option("--resource", default=None, help="Resource filter (aurora/polaris or UUID).")
@@ -139,8 +139,13 @@ def incidents_cmd(resource, status_, as_json, limit):
             ts=ts.replace("T"," ")[:16] if ts else "—"
             t.add_row(inc.get("name") or inc.get("id","")[:24], cell, inc.get("type") or "—", ts)
         Console().print(t)
-    else:
-        click.echo(f"{"NAME":<40} {"STATUS":<10} {"TYPE":<12} TIME")
+        NAME = "NAME"
+        STATUS = "STATUS"
+        TYPE = "TYPE"
+        click.echo(f"{NAME:<40} {STATUS:<10} {TYPE:<12} TIME")
         for inc in incidents:
-            ts=(inc.get("start") or "")[:16].replace("T"," ")
-            click.echo(f"{inc.get(chr(110)+chr(97)+chr(109)+chr(101),)[:40]:<40} {inc.get(chr(115)+chr(116)+chr(97)+chr(116)+chr(117)+chr(115),):<10} {inc.get(chr(116)+chr(121)+chr(112)+chr(101),) or chr(8212):<12} {ts}")
+            ts = (inc.get("start") or "")[:16].replace("T", " ")
+            name = inc.get(chr(110) + chr(97) + chr(109) + chr(101))
+            st2 = inc.get(chr(115) + chr(116) + chr(97) + chr(116) + chr(117) + chr(115))
+            ty = inc.get(chr(116) + chr(121) + chr(112) + chr(101)) or chr(8212)
+            click.echo(f"{name[:40]:<40} {st2:<10} {ty:<12} {ts}")

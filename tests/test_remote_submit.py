@@ -346,3 +346,40 @@ def test_generated_remote_script_is_valid_bash(tmp_path):
         ["bash", "-n", str(f)], capture_output=True, text=True
     )
     assert proc.returncode == 0, proc.stderr
+def test_ezpz_setup_env_inline_reaches_remote_script(monkeypatch):
+    """The submitter's EZPZ_SETUP_ENV must reach the compute node.
+
+    Without this, `EZPZ_SETUP_ENV='... @feat/zephon[zephon]' ezpz submit --remote sunspot -- ...`
+    silently installs main@HEAD on the node, so `--dataloader zephon` fails with
+    `error: unrecognized arguments` (#12482540).
+    """
+    monkeypatch.setenv(
+        "EZPZ_SETUP_ENV",
+        "echo CUSTOM_REMOTE_MARKER_XYZ && uv pip install 'git+https://github.com/saforem2/ezpz@feat/zephon-elastic-dataloader[zephon]'",
+    )
+    assert "CUSTOM_REMOTE_MARKER_XYZ" in _gen()
+
+
+def test_ezpz_setup_env_file_form_reaches_remote_script(monkeypatch, tmp_path):
+    """A file-valued EZPZ_SETUP_ENV is sourced on the target."""
+    f = tmp_path / "setup.sh"
+    f.write_text("echo hi\n")
+    monkeypatch.setenv("EZPZ_SETUP_ENV", str(f))
+    assert str(f) in _gen(), "should source the setup file on the remote"
+
+
+def test_remote_without_ezpz_setup_env_still_uses_managed_setup(monkeypatch):
+    """The default path must still emit the managed REMOTE_ENV_SETUP."""
+    monkeypatch.delenv("EZPZ_SETUP_ENV", raising=False)
+    out = _gen()
+    assert "ezpz_setup_env" in out
+    assert "CUSTOM_REMOTE_MARKER" not in out
+
+
+def test_explicit_env_overrides_ezpz_setup_env_on_remote(monkeypatch):
+    """--env selects a target env; it must win over EZPZ_SETUP_ENV."""
+    monkeypatch.setenv("EZPZ_SETUP_ENV", "echo SHOULD_NOT_APPEAR")
+    out = _gen("--env", "/tmp/myenv")
+    assert "SHOULD_NOT_APPEAR" not in out
+    assert "_EZPZ_ENV" in out or "myenv" in out
+
