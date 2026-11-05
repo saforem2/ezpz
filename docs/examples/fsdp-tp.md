@@ -327,8 +327,8 @@ model momentarily during `model.to(device)` before FSDP shards). If
 the model OOMs during init, raise `--tp` (halves per-rank weight
 memory for each doubling) or use a smaller preset.
 
-```python title="src/ezpz/examples/fsdp_tp.py:170:297"
---8<-- "src/ezpz/examples/fsdp_tp.py:170:297"
+```python title="src/ezpz/examples/fsdp_tp.py:180:297"
+--8<-- "src/ezpz/examples/fsdp_tp.py:180:297"
 ```
 
 </details>
@@ -373,8 +373,8 @@ the local shard so `cross_entropy` computes the correct loss.
 from `MODEL_PRESETS`; any flag the user provides explicitly takes
 precedence over the preset via `apply_model_preset`.
 
-```python title="src/ezpz/examples/fsdp_tp.py:1185:1656"
---8<-- "src/ezpz/examples/fsdp_tp.py:1185:1656"
+```python title="src/ezpz/examples/fsdp_tp.py:1187:1656"
+--8<-- "src/ezpz/examples/fsdp_tp.py:1187:1656"
 ```
 
 </details>
