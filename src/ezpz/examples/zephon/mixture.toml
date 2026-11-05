@@ -1,0 +1,18 @@
+# Two-source mixture for local smoke: weights 2:1 (a gets ~2× b's tokens).
+# Paths are resolved relative to THIS file.
+
+text_field = "text"
+seed = 42
+chunk_size = 4
+
+[[sources]]
+name = "a"
+path = "../../../../tests/assets/zephon_smoke/shard_a"
+fmt = "jsonl"
+weight = 2.0
+
+[[sources]]
+name = "b"
+path = "../../../../tests/assets/zephon_smoke/shard_b"
+fmt = "jsonl"
+weight = 1.0
