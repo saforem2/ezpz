@@ -288,7 +288,6 @@ extra_css = [
     "stylesheets/one-light.css",
     "stylesheets/atom-one-dark-reasonable.css",
     "stylesheets/theme.css",
-    "overrides/fonts.css",
     "https://iosevka-webfonts.github.io/iosevka/Iosevka.css",
     "https://iosevka-webfonts.github.io/iosevka-fixed/iosevka-fixed.css",
     # "stylesheets/custom.css",
@@ -551,10 +550,16 @@ toggle.name = "Switch to system preference"
 # of suitably licensed fonts. There are options for a normal text font and for
 # a monospaced font used in code blocks.
 # ----------------------------------------------------------------------------
+# [project.theme.font] disabled: Iosevka is not on Google Fonts — the
+# default block in templates/base.html would emit a 400 from
+# fonts.googleapis.com (heading/text/code = "Iosevka Web"). Font faces
+# are loaded via extra_css (docs/assets/fonts/) and --font-family is set
+# in docs/stylesheets/theme.css, so no theme.font needed.
 [project.theme.font]
 heading = "Iosevka Web"
 text = "Iosevka Web"
 code = "Iosevka Fixed Web"
+font = false
 
 # ----------------------------------------------------------------------------
 # You can configure your own logo to be shown in the header using the "logo"

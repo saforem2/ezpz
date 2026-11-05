@@ -1,9 +1,9 @@
 ---
 name: ezpz
-description: Use when running, testing, or benchmarking ezpz on an HPC system (Aurora, Sunspot, Polaris, Perlmutter) — job submission, environment setup, and the failure modes that silently produce wrong results.
+description: Use when running, testing, or benchmarking ezpz on an HPC system (Aurora, Sunspot, Polaris, Perlmutter) — job submission, environment setup, and the failure modes that silently produce wrong results. Covers submit/status/fetch/launch, CCL hangs, proxy/modules, and per-machine caveats.
 ---
 
-# Running `ezpz` on HPC
+# Running ezpz on HPC
 
 Read this **before** writing a batch script or ssh'ing into a cluster.
 Everything here was learned by losing allocations to it.
@@ -28,139 +28,101 @@ To exercise a working tree instead of the installed package:
 
 ```bash
 uv pip install -e .   # editable install
-# or, without installing:
-export PYTHONPATH="$PWD/src:$PYTHONPATH"
 ```
 
 ## Prefer `ezpz submit` over hand-writing a batch script
 
-`ezpz submit` generates the scheduler script for you — PBS or SLURM,
-detected automatically — and **wraps the command in `ezpz launch` by
-default**, so the CPU-binding mistake below cannot happen:
+`ezpz submit` generates the scheduler script for you (PBS/SLURM
+auto-detected), emits `#!/bin/bash --login` + proxy + workdir, and
+wraps with `ezpz launch` (hostfile + CPU binding). Always prefer it.
+
+## Quick dispatch
+
+| intent | command | notes |
+|---|---|---|
+| smoke on login node | `source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env` → `ezpz launch python3 -m ezpz.examples.test` | 4-line contract, see below |
+| remote smoke (one node) | `ezpz submit --remote <host> -N 1 -q debug --time 00:30:00 -- python3 -m ezpz.examples.test` | then `ezpz status` / `ezpz fetch` |
+| multi-node training | `ezpz submit -N 2 -q debug -A <acct> --filesystems home,flare -- python3 -m ezpz.examples.fsdp_tp --model large --tp 2` | add `--gpus-per-node`, `-C gpu` on Perlmutter |
+| watch progress | `ezpz status --limit 10` (fanout), `ezpz status --remote <host> --limit 5`, `ezpz fetch $JID --remote <host> --lines 40` | fanout is zero-scrape; see `docs/cli/status.md`, `docs/cli/fetch.md` |
+| cancel / extend | `ezpz cancel --dry-run`, `ezpz cancel $JID --remote <host>`, `ezpz extend $JID --time 02:00:00` | IRI only; see `docs/cli/cancel.md`, `docs/cli/extend.md` |
+| local launch | `ezpz launch python3 -m ezpz.examples.fsdp --model small` | computes hostfile + `--cpu-bind`, `--timeout`; see `docs/cli/launch.md` |
+| benchmark sweep | `python3 -c "from ezpz.cli import main; main()" benchmark --model small` | needs `ezpz` on PATH; see below |
+| completions | `ezpz completion bash|zsh|fish` | see `docs/cli/completion.md` |
+
+`ezpz submit` auto-wraps with `ezpz launch` (hostfile + CPU binding). Pass `--no-launch` only for custom launch flags. A redundant `ezpz launch` prefix is stripped with a warning. `ezpz submit --dry-run` prints the script without submitting.
+
+### Smoke — the four-line contract
+
+The smoke is intentionally tiny — no `PYTHONPATH`, no `bash -c` wrapper, no `--workdir` pinning to a shared cache. Each submit gets a fresh `ezpz-<timestamp>` workdir so its venv can't go stale:
 
 ```bash
-ezpz submit -N 2 -q debug -A datascience --filesystems home,flare \
-    -- python3 -m ezpz.examples.fsdp_tp --model large --tp 2
+# On a login node (interactive):
+NOW=$(date "+%Y-%m-%d-%H%M%S"); tdir="ezpz-${NOW}"; mkdir "${tdir}" && cd "${tdir}" && pwd
+source <(curl -fsSL https://ezpz.cool/utils.sh) && ezpz_setup_env
+uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz"
+ezpz launch python3 -m ezpz.examples.test
 
-# Perlmutter (SLURM) needs the GPU directives:
-ezpz submit -N 2 -q debug -A m4388_g -C gpu \
-    --gpus-per-node 4 --ntasks-per-node 4 \
-    -- python3 -m ezpz.examples.fsdp_tp --tp 2
-
-ezpz submit --dry-run ...       # print the script, submit nothing
-ezpz submit --no-strict ...     # omit `set -e` for multi-arm scripts
-ezpz submit job.sh -N 4         # or submit an existing script
+# Via ezpz submit (preferred — proxy + --login + workdir + launch handled):
+# Default (no --workdir): job gets its own WORKDIR on shared FS — nothing to create.
+ezpz submit --remote aurora -N 1 -q debug --time 00:30:00 -- python3 -m ezpz.examples.test
+# Then watch:
+ezpz status --limit 10; ezpz fetch $JID --remote aurora --lines 40
 ```
 
-`--dry-run` first is worth the two seconds: it prints exactly what would
-be submitted.
+Repeat the submit per host; `ezpz status` fanout picks them all up in one table.
+Only pass `--workdir` when you control the directory and have already created
+it on the target host (otherwise `cd $WORKDIR` fails before setup).
 
-When you must hand-write a script, run `.agents/skills/alcf-preflight/preflight.sh` first — see `.agents/skills/alcf-preflight/SKILL.md`.
+Anti-pattern: hand-building `qsub … -- /bin/bash $D/script.sh` with a separate `smoke-wrap.sh` + `smoke-job.sh` — that trio is how the harness grew stale-venv `127 ezpz: command not found` (`0.31.1`/`0.24.0`).
 
-The rest of this section is for when you genuinely need a hand-written
-script (multi-arm experiment harnesses, custom staging). Everything in
-it is what `ezpz submit` already does correctly.
-
-## Inside a batch script, three things change
-
-### 1. Compute nodes have no outbound internet
-
-`source <(curl -fsSL https://ezpz.cool/utils.sh)` **times out after
-~270 s** and then silently leaves the environment unconfigured. Source
-the repo's own copy — the same file:
+### Submit — flags worth knowing
 
 ```bash
-source "${D}/src/ezpz/bin/utils.sh"
-ezpz_setup_env || { echo "FATAL: ezpz_setup_env failed"; exit 1; }
+ezpz submit --help
 ```
 
-The same applies to anything else you fetch. `curl`ing a script *inside*
-the job returns an empty file, and the failure surfaces far downstream —
-`rc=127`, every function undefined — which reads like the code is broken
-rather than absent. Stage from a login node (which does have network)
-onto a shared filesystem, then **assert it arrived**:
+Key flags: `--remote` (or positional `ezpz submit aurora …`), `-N` nodes, `-q` queue, `-A` account, `-t`/`--time` walltime, `--workdir` (must exist; PBS defaults to `$PBS_O_WORKDIR/ezpz-$PBS_JOBID`, Slurm to `$SLURM_SUBMIT_DIR/ezpz-$SLURM_JOB_ID`), `--filesystems`, `--env` / `--env-setup-script` (explicit env overrides — no managed download), `--no-launch`, `--no-strict`, `--dry-run`, `--gpus-per-node`, `-C` constraint. Existing scheduler scripts passed as `ezpz submit job.sh -N 4` reject `--env` — put setup inside the script.
+
+Full contract: `docs/guides/remote-submission.md`, `docs/cli/submit.md`.
+
+### Status / fetch / logs
+
+- `ezpz status` with no args fans out to every reachable host (IRI + SSH) — columns Host/Job ID/User/State/Queue/Output/Exit + running-nodes block like `qmert`. Filters: `--owner`, `--all-users`, `--historical`, `--states`, `--queue`.
+- `ezpz status --remote <host>` — per-host. Add `--watch` to poll (`--interval 10`, `--once`, `--no-notify`); requires `--remote`.
+- `ezpz fetch $JID --remote <host> --lines 40` — one PBS stdout snapshot, not a live tail. Dedupe is on by default (`--no-dedupe` for verbatim). Discovery may use IRI, reading still needs SSH. Flags `--out` / portable per-example `logs` are incomplete — don't promise them.
+- `ezpz logs $JID --remote <host> --example test --lines 20` — per-example (site-specific workdir resolver).
+
+See `docs/cli/status.md`, `docs/cli/fetch.md`, `docs/cli/logs.md`.
+
+### Launch
+
+`ezpz launch` computes hostfile, rank counts, and the `--cpu-bind=list:…` map for the machine. **Always use it** over bare `mpiexec`; a hand-written `mpiexec -n 24 -ppn 12` supplies no CPU binding and is a confound for timing-sensitive hangs (an entire #252 campaign ran that way).
 
 ```bash
-# on a login node, beforehand. ALCF login nodes need the proxy too --
-# see "Downloads on ALCF need the proxy" below; without it this curl
-# hangs rather than failing fast.
-export https_proxy=http://proxy.alcf.anl.gov:3128   # ALCF only
-mkdir -p "${HOME}/stage"
-
-# Download to a temp file and move only on success: `curl` can be
-# interrupted after writing some bytes, and a PARTIAL file passes a
-# non-empty check while failing later with missing functions or a
-# syntax error -- worse than an empty one, because it looks staged.
-curl -fsSL --retry 3 \
-    https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/utils.sh \
-    -o "${HOME}/stage/utils.sh.part" \
-  && bash -n "${HOME}/stage/utils.sh.part" \
-  && mv "${HOME}/stage/utils.sh.part" "${HOME}/stage/utils.sh" \
-  || { echo "FATAL: staging failed"; rm -f "${HOME}/stage/utils.sh.part"; exit 1; }
-
-# in the job:
-U="${HOME}/stage/utils.sh"
-[[ -s "$U" ]] || { echo "FATAL: ${U} missing/empty — stage it first"; exit 1; }
+ezpz launch python3 -m ezpz.examples.fsdp_tp --tp 2   # yes
+mpiexec -n 24 -ppn 12 python3 -m ezpz.examples.fsdp_tp --tp 2   # no
 ```
 
-Also note the HF caches: `hf`/`hf_trainer`/`fsdp_tp`/`diffusion` examples
-need their datasets and models downloaded ahead of time. **Check the
-cache the libraries will actually read**, not a hard-coded path —
-`HF_HOME`, `HF_HUB_CACHE` and `HF_DATASETS_CACHE` all override the
-`~/.cache/huggingface` default, and the documented Perlmutter setup sets
-`HF_HOME="$SCRATCH/.cache/hf"`:
+Bare `mpiexec` is defensible only for non-training fan-out (unpacking a venv one-per-node) — say so in a comment when you do it.
 
-```bash
-ls "${HF_HUB_CACHE:-${HF_HOME:-$HOME/.cache/huggingface}/hub}"
-```
+See `docs/cli/launch.md`.
 
-A cache miss on a compute node is an offline error, not a code bug.
+## Inside a batch script, two things matter
 
-### 2. PBS runs your script under a NON-login shell
+Use `ezpz submit` and both are handled. The rest of this section is the "why".
 
-`qsub ... -- /bin/bash script.sh` gives you a shell where `module` does
-not exist. Worse, sourcing Lmod's `init/bash` alone defines `module` but
-leaves **`MODULEPATH` empty**, so every `module load` becomes a silent
-no-op ("No modules loaded") and `ezpz_setup_env` fails downstream with
-the misleading `CONDA_PREFIX still not set`.
+### Compute nodes need the proxy; PBS scripts must be login shells
 
-Source the login profile, and assert it worked.
+- Proxy: `http_proxy=http://proxy.alcf.anl.gov:3128` (and
+  `https_proxy`/`no_proxy`) — `ezpz submit` emits this; for interactive
+  shells put it in `~/.bashrc`/`~/.zshrc`.
+- Shebang: `#!/bin/bash --login` sets `MODULEPATH` so `module load`
+  works; `ezpz submit` already emits it.
 
-**Do not use `set -u` in these scripts at all.** The module system is
-not `set -u`-clean, in two separate places:
+HF caches (`hf`/`hf_trainer`/`fsdp_tp`/`diffusion`) must be pre-staged:
+`ls "${HF_HUB_CACHE:-${HF_HOME:-$HOME/.cache/huggingface}/hub}"`.
 
-- `/etc/profile` references unset variables, so sourcing it under
-  `set -u` aborts the script on that line — walltime `00:00:00`,
-  `Exit_status=1`, **empty `.o` and `.e`**, not one line printed.
-- Deferring `set -u` past the profile is *still* not enough: Lmod's
-  `init/bash` reads `$ZSH_EVAL_CONTEXT`, and `ezpz_setup_env` re-enters
-  the module machinery long after the preamble, so it dies mid-setup
-  with `ZSH_EVAL_CONTEXT: unbound variable`.
-
-Reproduce both with `bash -c 'set -u; source /etc/profile'`.
-
-```bash
-set -o pipefail                       # and NOT set -u, anywhere
-source /etc/profile 2>/dev/null || true
-command -v module >/dev/null 2>&1 || { echo "FATAL: no module cmd"; exit 1; }
-[ -n "${MODULEPATH:-}" ] || { echo "FATAL: MODULEPATH empty"; exit 1; }
-```
-
-Use `${VAR:-default}` everywhere and explicit `[ -n ... ]` checks
-instead — on these systems the shell strictness has to give way to the
-module system, not the other way round.
-
-An empty `.o`/`.e` with zero walltime always means the script died in
-its own preamble. Check `qstat -xf <jobid>` for `Exit_status` and
-`resources_used.walltime` before assuming anything about the run.
-
-**Dry-run the preamble before submitting.** Everything above the first
-`probe` call can be pasted into `ssh <host> bash -c '...'` and checked
-in seconds. Six Sunspot submissions were spent discovering preamble bugs
-one allocation at a time; each would have been caught by a five-second
-dry run.
-
-### 3. Login-node checks do not predict compute-node behaviour
+### Login-node checks do not predict compute-node behaviour
 
 `ezpz_setup_env` **fails on the Sunspot login node** (`CONDA_PREFIX
 still not set`) because `module load frameworks` is a compute-node
@@ -598,7 +560,7 @@ Read `docs/guides/remote-submission.md` + the CLI pages under `docs/cli/` for th
 - **Remote workdir:** choose it before environment setup, even with overrides. PBS defaults to `$PBS_O_WORKDIR/ezpz-$PBS_JOBID`, Slurm to `$SLURM_SUBMIT_DIR/ezpz-$SLURM_JOB_ID`; both use a job-specific `$HOME` fallback. Bases must be shared FS, never assume node-local `/tmp` is shared. Explicit `--workdir` is used exactly (no suffix) and must already exist. `mkdir`/`cd` failures stop the job even with `--no-strict`. Local submissions retain their cwd.
 - **Offline setup:** with neither environment option, the remote managed bootstrap still downloads `utils.sh` and may install ezpz. Compute-node internet is not guaranteed; prefer a staged setup script and prebuilt environment. Recognized ALCF targets get proxy settings before setup; non-ALCF targets do not.
 - **Read stdout:** `ezpz fetch JOB_ID --remote sunspot --lines 80 --no-dedupe` takes one PBS stdout snapshot, not a live follow. IRI may discover the path but reading still needs SSH. The current fallback is PBS `qstat`, not Slurm. Do not promise `--out err/both` or portable per-example `logs`: stream selection is incomplete and the current `logs` workdir resolver is site-specific. See `docs/cli/fetch.md`.
-- **Preflight (hand-written scripts):** `.agents/skills/alcf-preflight/preflight.sh <worktree> [venv] [machine] [job-script]` — see `.agents/skills/alcf-preflight/SKILL.md`. `ezpz submit` already covers most gates; use preflight for experiment harnesses and worktree/venv staging.
+- **Preflight (hand-written scripts):** `.agent/skills/alcf-preflight/preflight.sh <worktree> [venv] [machine] [job-script]` — see `/alcf-preflight`. `ezpz submit` already covers most gates; use preflight for experiment harnesses and worktree/venv staging.
 - **Useful commands:** `ezpz status --json`, `ezpz cancel --dry-run`, `ezpz extend --time`, `ezpz resources`, `ezpz incidents`, `ezpz fetch`, `ezpz logs --example test`, `ezpz completion`.
 
 ## Known open issues
@@ -628,3 +590,7 @@ Two framing traps worth inheriting:
 - Because the failure is probabilistic, **single-run comparisons cannot
   separate two programs**. Measure a rate over repeated alternating
   trials and state the interpretation before looking at the data.
+
+## Sub-skills
+
+- `/ezpz:preflight` (`.agent/skills/ezpz/preflight`) — gates hand-written PBS/Slurm scripts on `ZE_FLAT`, `--login`, `set -u`, shared-FS, stale worktree, and `ezpz.distributed` import. See its `SKILL.md` for the checklist.

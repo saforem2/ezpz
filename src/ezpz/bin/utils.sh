@@ -3873,6 +3873,13 @@ ezpz_check_working_dir_pbs() {
 	fi
 }
 
+# Run ezpz without installing — always latest from main.
+# Usage: ezpzx <ezpz-subcommand> [args...]  e.g. ezpzx launch python3 -m ezpz.examples.test
+# Uses TMPDIR=$(pwd) so uvx caches next to your workdir, not in a shared tmp.
+ezpzx() {
+	TMPDIR="$(pwd)" uvx --from "git+https://github.com/saforem2/ezpz" ezpz "${@}"
+}
+
 # --- Script Entry Point ---
 if [[ -n "${EZPZ_CHECK_WORKING_DIR:-}" ]]; then
 	if ! ezpz_check_working_dir; then

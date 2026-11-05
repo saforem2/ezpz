@@ -1,6 +1,6 @@
 ---
-name: alcf-preflight
-description: Use BEFORE submitting any PBS/Slurm job on Aurora, Sunspot, Polaris, Perlmutter or Sophia. Gates on ZE_FLAT, shared-FS paths, stale worktree, and Python API — every check catchable without a queue allocation.
+name: ezpz:preflight
+description: Preflight gate for hand-written PBS/Slurm jobs on Aurora/Sunspot/Polaris. Checks ZE_FLAT, --login, set -u, shared-FS, stale worktree, and ezpz import before qsub. Use only for hand-written scripts — ezpz submit already covers this.
 ---
 
 # ALCF preflight
@@ -20,7 +20,7 @@ Hand-written scripts reproduce the same five omissions repeatedly. When you must
 ## Running the gate
 
 ```bash
-.agents/skills/alcf-preflight/preflight.sh <worktree> [venv] [machine] [job-script]
+.agent/skills/ezpz/preflight/preflight.sh <worktree> [venv] [machine] [job-script]
 ```
 
 Exits non-zero on any `BAD` line. Every gate below is enforced there.
