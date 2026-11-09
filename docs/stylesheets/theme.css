@@ -30,6 +30,8 @@
   --h5-padding-block: 2pt;
   --h6-padding-block: 2pt;
 
+  --md-text-font: "Iosevka Web";
+  --md-code-font: "Iosevka Fixed Web";
   --font-family:
     "Iosevka Web", monospace, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji",
