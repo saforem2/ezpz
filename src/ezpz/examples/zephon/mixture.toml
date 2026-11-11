@@ -7,12 +7,12 @@ chunk_size = 4
 
 [[sources]]
 name = "a"
-path = "../../../../tests/assets/zephon_smoke/shard_a"
+path = "./fixtures/shard_a"
 fmt = "jsonl"
 weight = 2.0
 
 [[sources]]
 name = "b"
-path = "../../../../tests/assets/zephon_smoke/shard_b"
+path = "./fixtures/shard_b"
 fmt = "jsonl"
 weight = 1.0
