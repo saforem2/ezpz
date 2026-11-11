@@ -168,9 +168,11 @@ def submit_cmd(
 
     # --env sugar: a .sh is a script, not an env. Auto-route it to
     # --env-setup-script so `ezpz submit --env ./setup.sh` DTRT.
+    # Use the raw value for suffix detection (stripping would change a
+    # valid relative path like ' setup.sh' → './setup.sh').
     if env_path is not None and env_path.strip():
-        candidate_env = env_path.strip()
-        if candidate_env.endswith(".sh") or candidate_env.endswith(".bash"):
+        if env_path.strip().endswith(".sh") or env_path.strip().endswith(".bash"):
+            candidate_env = env_path.strip()
             if env_setup_script is not None:
                 raise click.UsageError(
                     "--env looks like a shell script (*.sh/*.bash) — "
@@ -242,11 +244,11 @@ def submit_cmd(
             command = list(args)
 
     if script_path is not None and (
-        env_path is not None or env_setup_script is not None
+        env_path is not None or env_setup_script is not None or module_load
     ):
         raise click.UsageError(
-            "--env and --env-setup-script apply only to generated commands; "
-            "put environment setup inside an existing job script."
+            "--env, --env-setup-script, and --module-load/--ml apply only to "
+            "generated commands; put environment setup inside an existing job script."
         )
 
     if script_path is None and command is None:
@@ -300,6 +302,13 @@ def submit_cmd(
             for m in module_load
             if m and m.strip()
         ]
+        # --ml alone replaces managed setup that set CCL_OP_SYNC=1 on
+        # Aurora/Sunspot (see utils.sh:1175-1195). Without it FSDP2+TP
+        # can hang. Preserve the default when no explicit env is given.
+        if env_path is None and _mod_lines:
+            _mod_lines.append(
+                'export CCL_OP_SYNC="${CCL_OP_SYNC:-1}"  # Aurora/Sunspot default; override if needed'
+            )
         synthesized_env = _strict_setup(_mod_lines) if _mod_lines else None
 
     from ezpz.remote_env import build_env_setup

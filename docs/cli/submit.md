@@ -53,9 +53,12 @@ complete ordering, defaults, and offline setup guidance, read
 
 !!! warning "`--env` migration"
 
-    `--env` now means an environment path, not shell commands or a script.
-    Change `--env setup.sh` to `--env-setup-script setup.sh`. Move inline shell
-    into a real setup script. The Python API's `env_setup` remains raw shell.
+    `--env` now means an environment path — a venv/conda prefix, a Python
+    executable, or a tarball. A `*.sh`/`*.bash` path passed via `--env` is
+    auto-routed to `--env-setup-script` (so `--env ./setup.sh` works), but
+    prefer the explicit `--env-setup-script` form. Inline shell commands
+    (`--env 'export FOO=bar'`) are not accepted — move them into a real
+    setup script. The Python API's `env_setup` remains raw shell.
 
 ## Two Modes
 
@@ -96,6 +99,7 @@ ezpz submit job.sh --nodes 4 --time 02:00:00
 | `--scheduler` | Force `PBS` or `SLURM` (auto-detected by default) |
 | `--env PATH` | Existing target-side venv/conda/Python prefix, or a Python executable under its `bin/` directory |
 | `--env-setup-script PATH` | Target-side shell script to source before selecting `--env` |
+| `--module-load` / `--ml` / `--module MOD` | `module load MOD` in the job shell (repeatable); composable with `--env`, mutually exclusive with `--env-setup-script` |
 | `--dry-run` | Print the script without submitting |
 | `--launch` / `--no-launch` | Wrap the command with `ezpz launch` (default: on) |
 | `--gpus-per-node` | SLURM `--gpus-per-node` (ignored for PBS) |
