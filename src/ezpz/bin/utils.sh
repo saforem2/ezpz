@@ -1001,20 +1001,15 @@ ezpz_setup_conda_sirius() {
 		return 0
 	fi
 	if [[ -d /soft/modulefiles ]]; then
-		module use /soft/modulefiles
-		module load conda
-		conda activate base 2>/dev/null
-		# Assert, do not assume. The conda modulefiles `depends_on`
-		# pinned versions that a Cray PE upgrade removed
-		# (gcc-native/14.2, cray-hdf5-parallel/1.14.3.5 -> now 14 and
-		# 1.14.3.9), so `module load conda` can fail while still
-		# returning 0 and leaving CONDA_PREFIX unset. Verified broken on
-		# Polaris for all six conda modules, 2026-09-16. Fall through to
-		# micromamba instead of reporting a success that did not happen.
-		if [[ -n "${CONDA_PREFIX:-}" ]]; then
-			return 0
+		if ezpz_sirius_load_cuda13_stack; then
+			conda activate base 2>/dev/null
+			# Assert, do not assume. The conda modulefiles can silently fail
+			# when a Cray PE dependency is unavailable.
+			if [[ -n "${CONDA_PREFIX:-}" ]]; then
+				return 0
+			fi
+			log_message WARN "ezpz_setup_conda_sirius: module load left CONDA_PREFIX unset; trying micromamba"
 		fi
-		log_message WARN "ezpz_setup_conda_sirius: 'module load conda' left CONDA_PREFIX unset (known Cray PE dependency drift); trying micromamba"
 	fi
 	local _mamba_root="${MAMBA_ROOT_PREFIX:-/lus/tegu/projects/PolarisAT/foremans/micromamba}"
 	if [[ -x "${_mamba_root}/bin/micromamba" ]]; then
@@ -1029,6 +1024,25 @@ ezpz_setup_conda_sirius() {
 	fi
 	log_message ERROR "ezpz_setup_conda_sirius: no conda source found (tried /soft/modulefiles and ${_mamba_root}/bin/micromamba)"
 	return 1
+}
+
+# Sirius's default `conda` module still selects the CUDA 12.9 / cuDNN 9.13
+# Polaris stack. The 2026-10-09 Sirius conda build uses Torch CUDA 13.0 and
+# cuDNN 9.26; mixing the default module with that Torch fails at the first
+# convolution with CUDNN_STATUS_SUBLIBRARY_LOADING_FAILED.
+# Set EZPZ_SIRIUS_CONDA_MODULE to override the site version when it changes.
+ezpz_sirius_load_cuda13_stack() {
+	local _module_root="${EZPZ_SIRIUS_MODULE_ROOT:-/soft/modulefiles}"
+	if [[ ! -d "${_module_root}" ]]; then
+		log_message ERROR "ezpz_sirius_load_cuda13_stack: ${_module_root} not found -- are you on Sirius?"
+		return 1
+	fi
+	module use "${_module_root}"
+	local _conda_module="${EZPZ_SIRIUS_CONDA_MODULE:-conda/2026-10-09}"
+	if ! module load "${_conda_module}"; then
+		log_message ERROR "ezpz_sirius_load_cuda13_stack: failed to load ${_conda_module}; set EZPZ_SIRIUS_CONDA_MODULE to an installed CUDA 13 Sirius module"
+		return 1
+	fi
 }
 
 ezpz_setup_conda_sophia() {
@@ -1347,23 +1361,9 @@ ezpz_load_modules_polaris() {
 }
 
 ezpz_load_modules_sirius() {
-	# Sirius is Polaris-adjacent: same `/soft/modulefiles` tree, same `x3*`
-	# compute nodes, same NVIDIA/CUDA stack. `module avail conda` there
-	# lists the same conda/2025-09-25 and conda/2025-09-28 builds Polaris
-	# exposes, so this delegates rather than duplicating the ~70 lines of
-	# CUDA/NCCL/TensorRT/proxy setup — and inherits the UNPINNED
-	# cray-hdf5-parallel/gcc-native workaround documented there, which
-	# Sirius needs for exactly the same reason (the pinned 1.14.3.5 / 14.2
-	# were removed from the Cray PE; the modulefiles still ask for them).
-	#
-	# This replaces a `return 0` no-op that claimed "sirius uses
-	# micromamba, not modules". That was inherited from
-	# `ezpz_setup_conda_sirius` and never verified.
-	if [[ ! -d /soft/modulefiles ]]; then
-		log_message ERROR "ezpz_load_modules_sirius: /soft/modulefiles not found — are you on Sirius?"
-		return 1
-	fi
-	ezpz_load_modules_polaris
+	# Unlike Polaris, Sirius's current Torch build is CUDA 13.0. Load the
+	# matching site module instead of inheriting Polaris's CUDA 12.9 stack.
+	ezpz_sirius_load_cuda13_stack
 }
 
 ###############################################
