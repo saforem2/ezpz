@@ -2094,48 +2094,40 @@ def _setup_ddp(
 
 
 @contextmanager
-def _xccl_split_workaround(device_type: str):
-    """Temporarily clear the default PG's ``bound_device_id`` on XPU.
+def _device_mesh_split_workaround(device_type: str):
+    """Use ``new_group`` when a bound process group's backend cannot split.
 
-    Works around xccl's missing ``ProcessGroup.split_group`` support for
-    any torch DeviceMesh operation that would otherwise take the
-    ``split_group`` path.
+    DeviceMesh prefers ``split_group`` when the default process group has a
+    ``bound_device_id``. XCCL does not support that operation, and some ALCF
+    NCCL builds report the same limitation. Temporarily clearing the binding
+    makes PyTorch use its ``new_group`` fallback while creating or flattening
+    the mesh. Restore the binding afterwards so FSDP2 still resolves the
+    per-device process group correctly.
 
-    For FSDP2 to route ``foreach_all_gather`` correctly on XPU,
-    ``_setup_ddp`` binds the default PG to a device by passing
-    ``device_id=`` to ``init_process_group``. Torch then sees
-    ``default_group.bound_device_id is not None`` and, inside
-    ``DeviceMesh._init_one_process_group``, prefers
-    ``split_group(parent_pg, ...)`` over ``new_group(ranks, ...)``.
-    On the current xccl backend ``parent_backend.supports_splitting``
-    is ``False``, so ``split_group`` raises:
-
-        RuntimeError: No backend for the parent process group or its
-                      backend does not support splitting
-
-    Clearing ``bound_device_id`` for the duration of the mesh op makes
-    torch take the ``new_group`` fallback (which xccl supports); the
-    original value is restored afterwards so FSDP2's per-device PG
-    resolution still works. Both ``init_device_mesh`` (mesh creation)
-    and ``DeviceMesh._flatten`` (submesh flattening, HSDP) create PGs
-    this way, so both must run inside this context.
-
-    No-op on non-xpu devices and when no default PG exists yet.
+    XPU always uses the fallback. CUDA checks the backend's
+    ``supports_splitting`` capability and falls back only when it is absent
+    or false. Other devices and unbound process groups need no workaround.
     """
     import torch
 
     default_pg = None
     saved: Any = None
     needs_workaround = False
-    if device_type == "xpu" and torch.distributed.is_initialized():
+    if device_type in {"cuda", "xpu"} and torch.distributed.is_initialized():
         try:
             default_pg = torch.distributed.distributed_c10d._get_default_group()
             saved = getattr(default_pg, "bound_device_id", None)
-            if saved is not None:
+            needs_workaround = device_type == "xpu"
+            if device_type == "cuda" and saved is not None:
+                backend = default_pg._get_backend(torch.device("cuda"))
+                needs_workaround = not bool(
+                    backend
+                    and getattr(backend, "supports_splitting", False)
+                )
+            if saved is not None and needs_workaround:
                 default_pg.bound_device_id = None  # type: ignore[attr-defined]
-                needs_workaround = True
         except (AttributeError, RuntimeError):
-            needs_workaround = False
+            needs_workaround = saved is not None
     try:
         yield
     finally:
@@ -2161,7 +2153,7 @@ def init_device_mesh_safe(
     """
     from torch.distributed.device_mesh import init_device_mesh as _imd
 
-    with _xccl_split_workaround(device_type):
+    with _device_mesh_split_workaround(device_type):
         return _imd(device_type, mesh_shape, mesh_dim_names=mesh_dim_names)
 
 
@@ -2194,7 +2186,7 @@ def flatten_device_mesh_safe(
         device_type = getattr(submesh, "device_type", None) or (
             get_torch_device_type()
         )
-    with _xccl_split_workaround(device_type):
+    with _device_mesh_split_workaround(device_type):
         return submesh._flatten(mesh_dim_name)
 
 

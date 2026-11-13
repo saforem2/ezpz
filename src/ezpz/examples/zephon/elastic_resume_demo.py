@@ -62,9 +62,10 @@ def main() -> None:
     hashes_resumed = [_hash_batch(b) for b in resumed]
     print(f"Resumed 2 batches: {hashes_resumed}")
 
-    # Sanity: resumed hashes should differ from first-2 (we resumed at offset 2)
-    # and should not be empty
-    assert hashes_resumed[0] != hashes_first[0] or len(first_4) > 2
+    expected = hashes_first[2:]
+    assert hashes_resumed == expected, (
+        f"resume mismatch: expected {expected}, got {hashes_resumed}"
+    )
     print("PASS: elastic resume round-trip ok (single-rank)")
 
     # Multi-config smoke: also try mixture recipe

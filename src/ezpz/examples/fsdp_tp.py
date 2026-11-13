@@ -2764,7 +2764,11 @@ def train(
 
     hf_dataset = None
     hf_tokenizer = None
-    if args.dataset.lower() not in {"mnist", "random"}:
+    if (
+        args.dataset.lower() not in {"mnist", "random"}
+        and args.dataset.lower() != "zephon"
+        and args.dataloader != "zephon"
+    ):
         from ezpz.data.hf import get_hf_text_dataset
 
         seed = int(os.environ.get("EZPZ_HF_SAMPLE_SEED", "1337"))
@@ -3343,6 +3347,11 @@ def train(
                 resume_meta.get("tokens_seen"),
             )
 
+    # A native Zephon checkpoint restores the stream position itself. Keep
+    # this flag so the generic epoch/offset fallback below does not skip the
+    # same batches a second time.
+    zephon_state_restored = False
+
     # reuse device for input placement
 
     tp_group = device_mesh.get_group("tp")
@@ -3384,7 +3393,11 @@ def train(
         )
         dataloader = ZephonDataLoader(
             recipe,
-            seq_len=args.seq_len,
+            # The causal-LM step shifts tokens into input/label pairs and
+            # drops the final position. Match the other dataset paths by
+            # giving Zephon one extra token so the model still sees exactly
+            # args.seq_len positions (and TP sequence shards stay even).
+            seq_len=args.seq_len + 1,
             microbatch_tokens=getattr(args, "microbatch_tokens", None),
             aggregate_dir=getattr(args, "zephon_aggregate_dir", None)
             or os.environ.get("ZEPHON_AGGREGATE_DIR"),
@@ -3394,18 +3407,13 @@ def train(
             or os.environ.get("ZEPHON_RUN_ID"),
         )
         # Restore deterministically on resume (no sampler — Zephon owns sharding).
-        if (
-            "resume_meta" in locals()
-            and resume_meta
-            and (
-                resume_meta.get("dataloader_state")
-                or resume_meta.get("zephon_state")
-            )
-        ):
-            dataloader.load_state(
-                resume_meta.get("dataloader_state")
-                or resume_meta.get("zephon_state")
-            )
+        if resume_meta:
+            zephon_state = resume_meta.get("dataloader_state")
+            if zephon_state is None:
+                zephon_state = resume_meta.get("zephon_state")
+            if zephon_state is not None:
+                dataloader.load_state(zephon_state)
+                zephon_state_restored = True
         dataset = None  # packing is inside Zephon; no hf_dataset
         sampler = None
         # Preserve TP semantics if the dataloader needs it (broadcast within TP handled by Zephon dp_degree).
@@ -3548,7 +3556,13 @@ def train(
             batches_per_epoch = len(dataloader)
         except TypeError:
             batches_per_epoch = 0
-        if batches_per_epoch > 0:
+        if zephon_state_restored:
+            # The Zephon pipeline already resumes at the next batch. Only
+            # restore the epoch; applying batch_offset here would skip data
+            # twice and break exact resume.
+            start_epoch = int(resume_meta.get("epoch", 0) or 0)
+            resume_offset = 0
+        elif batches_per_epoch > 0:
             start_epoch = global_step // batches_per_epoch
             resume_offset = global_step % batches_per_epoch
         else:

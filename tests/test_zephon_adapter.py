@@ -69,23 +69,25 @@ def test_zephon_mixture_recipe_yields_batches():
 
 
 def test_elastic_resume_cpu():
-    """Single-process checkpoint/restore is idempotent (no elastic resize, just round-trip)."""
+    """Checkpoint restore continues with the next batch in the same stream."""
     from ezpz.data.zephon import ZephonDataLoader
+
+    reference = ZephonDataLoader(recipe=RECIPE, seq_len=32, tokenizer_id="gpt2")
+    ref_it = iter(reference)
+    next(ref_it)
+    next(ref_it)
+    expected = next(ref_it)["input_ids"].tolist()
 
     dl = ZephonDataLoader(recipe=RECIPE, seq_len=32, tokenizer_id="gpt2")
     it = iter(dl)
     # Consume 2 batches, checkpoint, restore on a fresh loader, continue
-    b0 = next(it)
-    b1 = next(it)
+    next(it)
+    next(it)
     state = dl.save_state()
     assert state is not None, "save_state returned None before any batch"
 
-    # Fresh loader, restore, should continue from same point (if elastic semantics hold,
-    # the next batch after restore equals the next batch we would have seen without restore).
-    # Single-rank round-trip: we just test that restore doesn't throw and yields a batch.
     dl2 = ZephonDataLoader(recipe=RECIPE, seq_len=32, tokenizer_id="gpt2")
-    # Must build pipeline before load, or defer
     dl2.load_state(state)
     it2 = iter(dl2)
-    b2 = next(it2)
-    assert "input_ids" in b2
+    actual = next(it2)["input_ids"].tolist()
+    assert actual == expected
