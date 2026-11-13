@@ -70,8 +70,9 @@ behavior; it is not an environment-prefix option.
 
 !!! warning "Migrating the old `--env`"
 
-    `--env` no longer accepts inline shell or a setup script. Replace
-    `--env /path/setup.sh` with `--env-setup-script /path/setup.sh`. Move inline
+    `--env` no longer accepts inline shell. A `*.sh`/`*.bash` value passed to
+    `--env` is auto-routed to `--env-setup-script` (prefer the explicit form).
+    Replace `--env "export FOO=1"` with a setup script + `--env-setup-script`. Move inline
     commands into a real target-side script and source it with that option.
 
 ## Job-unique working directories on PBS and Slurm
