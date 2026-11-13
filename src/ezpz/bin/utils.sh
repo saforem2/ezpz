@@ -998,9 +998,12 @@ ezpz_setup_conda_sirius() {
 	# surfaced several layers later as "CONDA_PREFIX still not set").
 	if [[ -n "${CONDA_PREFIX:-}" || -n "${VIRTUAL_ENV:-}" ]]; then
 		echo "Found existing python at: $(which python3)"
-		return 0
+		# An existing env does not guarantee the Sirius CUDA 13 runtime. Load
+		# only its system modules here; do not replace a caller's Python env.
+		return ezpz_sirius_load_cuda13_modules
 	fi
-	if [[ -d /soft/modulefiles ]]; then
+	local _module_root="${EZPZ_SIRIUS_MODULE_ROOT:-/soft/modulefiles}"
+	if [[ -d "${_module_root}" ]]; then
 		if ezpz_sirius_load_cuda13_stack; then
 			conda activate base 2>/dev/null
 			# Assert, do not assume. The conda modulefiles can silently fail
@@ -1018,7 +1021,7 @@ ezpz_setup_conda_sirius() {
 		shell_name=$(basename "${SHELL}")
 		eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook --shell "${shell_name}")"
 		if micromamba activate 2024-04-23; then
-			return 0
+			return ezpz_sirius_load_cuda13_modules
 		fi
 		log_message WARN "ezpz_setup_conda_sirius: micromamba activate 2024-04-23 failed; trying remaining sources"
 	fi
@@ -1041,6 +1044,30 @@ ezpz_sirius_load_cuda13_stack() {
 	local _conda_module="${EZPZ_SIRIUS_CONDA_MODULE:-conda/2026-10-09}"
 	if ! module load "${_conda_module}"; then
 		log_message ERROR "ezpz_sirius_load_cuda13_stack: failed to load ${_conda_module}; set EZPZ_SIRIUS_CONDA_MODULE to an installed CUDA 13 Sirius module"
+		return 1
+	fi
+	if ! module is-loaded "${_conda_module}"; then
+		log_message ERROR "ezpz_sirius_load_cuda13_stack: module load returned success but ${_conda_module} is not active"
+		return 1
+	fi
+}
+
+# Load only the system runtime modules needed by custom Python environments.
+# The dated conda module includes a prebuilt Python environment and is reserved
+# for ezpz_setup_conda_sirius; the bare-module flow must not import that env.
+ezpz_sirius_load_cuda13_modules() {
+	local _module_root="${EZPZ_SIRIUS_MODULE_ROOT:-/soft/modulefiles}"
+	if [[ ! -d "${_module_root}" ]]; then
+		log_message ERROR "ezpz_sirius_load_cuda13_modules: ${_module_root} not found -- are you on Sirius?"
+		return 1
+	fi
+	module use "${_module_root}"
+	if ! module load PrgEnv-gnu craype-x86-milan cray-hdf5-parallel cudnn/9.26.0 gcc-native; then
+		log_message ERROR "ezpz_sirius_load_cuda13_modules: failed to load the CUDA 13 system runtime modules"
+		return 1
+	fi
+	if ! module is-loaded cudnn/9.26.0; then
+		log_message ERROR "ezpz_sirius_load_cuda13_modules: module load returned success but cudnn/9.26.0 is not active"
 		return 1
 	fi
 }
@@ -1361,9 +1388,9 @@ ezpz_load_modules_polaris() {
 }
 
 ezpz_load_modules_sirius() {
-	# Unlike Polaris, Sirius's current Torch build is CUDA 13.0. Load the
-	# matching site module instead of inheriting Polaris's CUDA 12.9 stack.
-	ezpz_sirius_load_cuda13_stack
+	# Unlike Polaris, Sirius's current Torch build is CUDA 13.0. Load only the
+	# system runtime modules; a custom venv must not inherit the conda Python env.
+	ezpz_sirius_load_cuda13_modules
 }
 
 ###############################################
@@ -1382,9 +1409,9 @@ ezpz_load_modules_sirius() {
 # versions in the wrong order.
 #
 # Machine detection uses `ezpz_get_machine_name`,
-# which keys off `hostname`. Sirius delegates to
-# the Polaris loader — it shares the same
-# `/soft/modulefiles` tree and CUDA stack.
+# which keys off `hostname`. Sirius uses its own
+# CUDA 13 system runtime modules; they differ from
+# Polaris's CUDA 12.9 stack.
 #
 # @example
 #    ezpz_load_modules
@@ -1422,6 +1449,14 @@ ezpz_install_and_setup_micromamba() {
 }
 
 ezpz_setup_conda() {
+	# Sirius must verify/select its CUDA 13 runtime even when the caller has
+	# already activated a Python environment. Other machines retain the legacy
+	# CONDA_PREFIX short-circuit below.
+	if [[ "$(ezpz_get_machine_name)" == "sirius" ]]; then
+		echo "Conda version: $(conda --version 2>/dev/null || true)"
+		ezpz_setup_conda_sirius
+		return $?
+	fi
 	if command -v conda &>/dev/null; then
 		log_message INFO "Conda version: $(conda --version)"
 	fi

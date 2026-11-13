@@ -28,4 +28,5 @@ ezpz_sirius_load_cuda13_stack
     assert calls.read_text().splitlines() == [
         f"use {module_root}",
         "load conda/2026-10-09",
+        "is-loaded conda/2026-10-09",
     ]
