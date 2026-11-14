@@ -286,7 +286,7 @@ extra_css = [
     "stylesheets/oklch.min.css",
     "stylesheets/one-light.css",
     "stylesheets/atom-one-dark-reasonable.css",
-    "stylesheets/theme.css",
+    "stylesheets/theme-performance-20261114.css",
     # "stylesheets/custom.css",
     # "https://drafts.csswg.org/css-color-4/#lab-colors",
     # "https://drafts.csswg.org/css-color-4/#resolving-lab-lch-values",
