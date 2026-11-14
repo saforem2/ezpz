@@ -23,7 +23,7 @@ function ensureMermaid() {
 }
 
 document$.subscribe(({ body }) => {
-  const diagrams = [...body.querySelectorAll(".mermaid")];
+  const diagrams = [...body.querySelectorAll(".mermaid-source")];
   if (diagrams.length === 0) return;
   const diagramSources = diagrams.map((diagram) => {
     const code = diagram.querySelector("code");
@@ -39,7 +39,7 @@ document$.subscribe(({ body }) => {
 
       // The theme can replace the original <pre> nodes while Mermaid loads.
       // Re-query the live DOM and restore the source captured above.
-      const currentDiagrams = [...document.querySelectorAll(".mermaid")];
+      const currentDiagrams = [...document.querySelectorAll(".mermaid-source")];
       const pending = currentDiagrams
         .map((diagram, index) => ({ diagram, source: diagramSources[index] }))
         .filter(
