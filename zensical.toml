@@ -287,7 +287,6 @@ extra_css = [
     "stylesheets/one-light.css",
     "stylesheets/atom-one-dark-reasonable.css",
     "stylesheets/theme.css",
-    "stylesheets/fonts.css",
     # "stylesheets/custom.css",
     # "https://drafts.csswg.org/css-color-4/#lab-colors",
     # "https://drafts.csswg.org/css-color-4/#resolving-lab-lch-values",
@@ -305,8 +304,9 @@ extra_css = [
 # Read more: https://zensical.org/docs/customization/#additional-javascript
 #extra_javascript = ["javascripts/extra.js"]
 extra_javascript = [
-    "javascripts/katex.js",
-    "javascripts/mermaid-init.js",
+    { path = "javascripts/katex.js", defer = true },
+    { path = "javascripts/mermaid-init.js", defer = true },
+    { path = "javascripts/accessibility.js", defer = true },
 ]
 
 # ----------------------------------------------------------------------------
