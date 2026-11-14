@@ -20,6 +20,11 @@ document$.subscribe(({ body }) => {
   const diagrams = [...body.querySelectorAll(".mermaid")];
   if (diagrams.length === 0) return;
 
+  diagrams.forEach((diagram) => {
+    const code = diagram.querySelector("code");
+    if (code) diagram.textContent = code.textContent;
+  });
+
   ensureMermaid()
     .then(() => {
       mermaid.initialize({ startOnLoad: false });
