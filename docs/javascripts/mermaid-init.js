@@ -5,6 +5,11 @@ let mermaidRenderQueue = Promise.resolve();
 function ensureMermaid() {
   if (!mermaidReady) {
     mermaidReady = new Promise((resolve, reject) => {
+      if (window.mermaid) {
+        resolve();
+        return;
+      }
+
       const script = document.createElement("script");
       script.src = mermaidScript;
       script.async = true;
@@ -20,23 +25,35 @@ function ensureMermaid() {
 document$.subscribe(({ body }) => {
   const diagrams = [...body.querySelectorAll(".mermaid")];
   if (diagrams.length === 0) return;
+  const diagramSources = diagrams.map((diagram) => {
+    const code = diagram.querySelector("code");
+    return code ? code.textContent : diagram.textContent;
+  });
+  const pagePath = location.pathname;
 
   mermaidRenderQueue = mermaidRenderQueue
     .catch(() => {})
     .then(() => ensureMermaid())
     .then(() => {
-      const pending = diagrams.filter(
-        (diagram) => diagram.dataset.processed !== "true",
-      );
+      if (location.pathname !== pagePath) return;
+
+      // The theme can replace the original <pre> nodes while Mermaid loads.
+      // Re-query the live DOM and restore the source captured above.
+      const currentDiagrams = [...document.querySelectorAll(".mermaid")];
+      const pending = currentDiagrams
+        .map((diagram, index) => ({ diagram, source: diagramSources[index] }))
+        .filter(
+          ({ diagram }) =>
+            diagram.dataset.processed !== "true" && !diagram.querySelector("svg"),
+        );
       if (pending.length === 0) return;
 
-      pending.forEach((diagram) => {
-        const code = diagram.querySelector("code");
-        if (code) diagram.textContent = code.textContent;
+      pending.forEach(({ diagram, source }) => {
+        if (source) diagram.textContent = source;
       });
 
       mermaid.initialize({ startOnLoad: false });
-      return mermaid.run({ nodes: pending });
+      return mermaid.run({ nodes: pending.map(({ diagram }) => diagram) });
     })
     .catch((error) => console.error("Could not render page diagrams:", error));
 });
