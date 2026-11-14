@@ -283,13 +283,11 @@ nav = [
 #extra_css = ["stylesheets/extra.css"]
 #
 extra_css = [
-    "https://unpkg.com/katex@0/dist/katex.min.css",
     "stylesheets/oklch.min.css",
     "stylesheets/one-light.css",
     "stylesheets/atom-one-dark-reasonable.css",
     "stylesheets/theme.css",
-    "https://iosevka-webfonts.github.io/iosevka/Iosevka.css",
-    "https://iosevka-webfonts.github.io/iosevka-fixed/iosevka-fixed.css",
+    "stylesheets/fonts.css",
     # "stylesheets/custom.css",
     # "https://drafts.csswg.org/css-color-4/#lab-colors",
     # "https://drafts.csswg.org/css-color-4/#resolving-lab-lch-values",
@@ -308,9 +306,6 @@ extra_css = [
 #extra_javascript = ["javascripts/extra.js"]
 extra_javascript = [
     "javascripts/katex.js",
-    "https://unpkg.com/katex@0/dist/katex.min.js",
-    "https://unpkg.com/katex@0/dist/contrib/auto-render.min.js",
-    "https://unpkg.com/mermaid@11.6.0/dist/mermaid.min.js",
     "javascripts/mermaid-init.js",
 ]
 

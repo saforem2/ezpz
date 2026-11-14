@@ -1,0 +1,28 @@
+/* Keep the existing typeface while avoiding late font swaps that move text. */
+@font-face {
+  font-family: "Iosevka Web";
+  font-style: normal;
+  font-weight: 400;
+  font-display: optional;
+  src: url("https://iosevka-webfonts.github.io/iosevka/WOFF2/Iosevka-Regular.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "Iosevka Web";
+  font-style: normal;
+  font-weight: 700;
+  font-display: optional;
+  src: url("https://iosevka-webfonts.github.io/iosevka/WOFF2/Iosevka-Bold.woff2")
+    format("woff2");
+}
+
+@font-face {
+  font-family: "Iosevka Fixed Web";
+  font-style: normal;
+  font-weight: 400;
+  font-display: optional;
+  src: url("https://iosevka-webfonts.github.io/iosevka-fixed/woff2/iosevka-fixed-regular.woff2")
+    format("woff2");
+}
+
