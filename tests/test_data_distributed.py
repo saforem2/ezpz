@@ -187,15 +187,28 @@ class TestTPBroadcastDataLoader:
     def test_non_leader_receives_broadcasts(
         self, mock_leader, mock_global, mock_bcast
     ):
-        """Non-leader iterates dummy range and receives broadcast results."""
+        """Non-leader stops only when the leader broadcasts end-of-stream."""
         mock_dl = MagicMock()
-        mock_dl.__len__ = MagicMock(return_value=2)
+        mock_dl.__len__.side_effect = AssertionError(
+            "streaming loader length must not be required"
+        )
+        payloads = iter(
+            [(True, {"x": 1}), (True, {"x": 2}), (False, None)]
+        )
+
+        def _broadcast_next(obj_list, *, src, group):
+            assert src == 0
+            assert group is pg
+            obj_list[0] = next(payloads)
+
+        mock_bcast.side_effect = _broadcast_next
 
         pg = _make_pg(rank=1, world_size=2)
         loader = ddist.TPBroadcastDataLoader(mock_dl, pg)
-        results = list(loader)
-        # Should have iterated 2 times (len of dataloader)
-        assert len(results) == 2
+        results = list(iter(loader))
+        assert results == [{"x": 1}, {"x": 2}]
+        assert mock_bcast.call_count == 3
+        mock_dl.__iter__.assert_not_called()
 
     def test_len(self):
         """__len__ delegates to underlying dataloader."""

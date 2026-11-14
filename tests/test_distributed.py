@@ -2532,24 +2532,22 @@ class TestInitDeviceMeshSafe:
         # No mutation — still None.
         assert pg.bound_device_id is None
 
-    def test_non_xpu_skips_workaround_entirely(self, monkeypatch):
-        """CUDA path must NOT touch ``bound_device_id``.
-
-        Torch's NCCL backend supports split_group natively; this
-        helper should be a pure pass-through there.
-        """
+    def test_cuda_with_splitting_backend_is_pass_through(self, monkeypatch):
+        """A CUDA backend with native splitting must keep its binding."""
         sentinel = torch.device("cuda:0")
         pg = self._fake_pg(sentinel)
+        backend = MagicMock()
+        backend.supports_splitting = True
+        pg._get_backend.return_value = backend
 
         monkeypatch.setattr(
             torch.distributed, "is_initialized", lambda: True
         )
-        # If the CUDA path ever tries to fetch the default PG, blow up
-        # — we want a true no-op.
+        get_default_group = MagicMock(return_value=pg)
         monkeypatch.setattr(
             torch.distributed.distributed_c10d,
             "_get_default_group",
-            MagicMock(side_effect=AssertionError("CUDA must not touch the default PG")),
+            get_default_group,
         )
 
         import torch.distributed.device_mesh as _dm
@@ -2560,7 +2558,8 @@ class TestInitDeviceMeshSafe:
         dist.init_device_mesh_safe("cuda", (8,))
 
         called.assert_called_once_with("cuda", (8,), mesh_dim_names=None)
-        # bound_device_id still untouched.
+        get_default_group.assert_called_once()
+        pg._get_backend.assert_called_once_with(torch.device("cuda"))
         assert pg.bound_device_id == sentinel
 
     def test_no_default_pg_is_pass_through(self, monkeypatch):
@@ -2744,27 +2743,34 @@ class TestFlattenDeviceMeshSafe:
         dist.flatten_device_mesh_safe(submesh, "dp")
         assert observed["mid_call_bound_device_id"] is None
 
-    def test_non_xpu_is_pass_through(self, monkeypatch):
-        """CUDA: no bound_device_id touching; _flatten called directly."""
+    def test_cuda_with_splitting_backend_is_pass_through(self, monkeypatch):
+        """A CUDA backend with native splitting must keep its binding."""
         submesh = MagicMock(name="submesh")
         submesh.device_type = "cuda"
         submesh._flatten.return_value = MagicMock(name="flat")
+        sentinel = torch.device("cuda:0")
+        pg = MagicMock()
+        pg.bound_device_id = sentinel
+        backend = MagicMock()
+        backend.supports_splitting = True
+        pg._get_backend.return_value = backend
 
         monkeypatch.setattr(
             torch.distributed, "is_initialized", lambda: True
         )
-        # CUDA path must never fetch the default PG.
+        get_default_group = MagicMock(return_value=pg)
         monkeypatch.setattr(
             torch.distributed.distributed_c10d,
             "_get_default_group",
-            MagicMock(
-                side_effect=AssertionError("CUDA must not touch default PG")
-            ),
+            get_default_group,
         )
 
         out = dist.flatten_device_mesh_safe(submesh, "dp")
         submesh._flatten.assert_called_once_with("dp")
+        get_default_group.assert_called_once()
+        pg._get_backend.assert_called_once_with(torch.device("cuda"))
         assert out is submesh._flatten.return_value
+        assert pg.bound_device_id == sentinel
 
     def test_restores_bound_device_id_when_flatten_raises(self, monkeypatch):
         """If ``_flatten`` raises, bound_device_id MUST be restored."""
