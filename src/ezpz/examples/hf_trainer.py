@@ -20,6 +20,11 @@ from itertools import chain
 from pathlib import Path
 from typing import Any, Optional
 
+# This entrypoint trains with PyTorch.  Prevent Transformers from probing an
+# unrelated TensorFlow installation on shared environments unless a caller
+# has explicitly selected a backend.
+os.environ.setdefault("USE_TF", "0")
+
 import datasets
 import torch
 import transformers

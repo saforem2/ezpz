@@ -1626,7 +1626,7 @@ def parse_args(argv: Optional[list[str]] = None):
     parser.add_argument(
         "--tokenizer_name",
         type=str,
-        default="meta-llama/llama-2-7b-hf",
+        default="openai-community/gpt2",
         help=(
             "HuggingFace tokenizer repo id used to tokenize the HF "
             "dataset. Auto-overridden to --model when --model is a HF "

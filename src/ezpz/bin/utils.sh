@@ -1002,7 +1002,11 @@ ezpz_setup_conda_sirius() {
 	fi
 	if [[ -d /soft/modulefiles ]]; then
 		module use /soft/modulefiles
-		module load conda
+		# Select the current Sirius stack explicitly. An unversioned `conda`
+		# resolves through site defaults and has previously selected a Torch
+		# 2.8 stack. Keep an override for site transitions and testing.
+		local conda_module="${EZPZ_SIRIUS_CONDA_MODULE:-conda/2026-10-09}"
+		module load "${conda_module}"
 		conda activate base 2>/dev/null
 		# Assert, do not assume. The conda modulefiles `depends_on`
 		# pinned versions that a Cray PE upgrade removed
@@ -1795,6 +1799,16 @@ ezpz_setup_venv_from_conda() {
 		wdname="$(basename "$(ezpz_get_working_dir)")"
 		local pyname
 		pyname="$(basename "${python_root}")"
+		# Conda module roots are all named mconda3, so basename alone reuses
+		# a venv created on top of an older Torch/Python stack. Include the
+		# dated parent directory in the cache key for module-managed roots.
+		if [[ "${pyname}" == "mconda3" && "${python_root}" == *"/mconda3" ]]; then
+			local conda_release
+			conda_release="$(basename "$(dirname "${python_root}")")"
+			if [[ "${conda_release}" =~ ^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$ ]]; then
+				pyname="${pyname}-${conda_release}"
+			fi
+		fi
 		local env_name
 		env_name="${wdname}-${pyname}"
 		local ptmodstr
