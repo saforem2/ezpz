@@ -57,6 +57,7 @@ nav = [
         { "🔪 Node-Kill Postmortem" = "guides/autoretry-nodekill.md" },
         { "🧬 LoRA + FSDP2 Deadlock (#239)" = "guides/lora-fsdp-deadlock.md" },
         { "📡 Remote Submission" = "guides/remote-submission.md" },
+        { "🔀 Streaming Dataset Mixtures (Zephon)" = "guides/zephon-dataloader.md" },
         { "🖥️ Perlmutter (SLURM/A100)" = "guides/perlmutter.md" },
         { "📊 agpt-2b across machines" = "guides/xmachine-agpt2b.md" },
         "recipes.md",

@@ -455,9 +455,9 @@ from `ModelArgs`, moved to the device, optionally given a
 HuggingFace datasets. For HF data, a `DistributedSampler` partitions
 across the DP dimension, and `TPBroadcastDataLoader` replicates batches
 within each TP group. Pass `--dataloader zephon --zephon-recipe <toml>`
-(requires `ezpz[zephon]`) for elastically deterministic streaming that
-survives DP-size changes on checkpoint/resume; see the
-[Zephon spec](../../superpowers/specs/2026-11-01-zephon-dataloader-design.md).
+(requires `ezpz[zephon]`) for streaming mixtures that can resume across
+data-parallel degree changes; see the [Zephon data loading guide](../guides/zephon-dataloader.md)
+and [design spec](../../superpowers/specs/2026-11-01-zephon-dataloader-design.md).
 
 ```python title="src/ezpz/examples/fsdp_tp.py:2659:2679"
 --8<-- "src/ezpz/examples/fsdp_tp.py:2659:2679"
