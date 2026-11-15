@@ -103,15 +103,40 @@ class TPBroadcastDataLoader:
         self.leader = _tp_is_leader(tp_group)
 
     def __iter__(self) -> Iterator:
-        it: Iterable = iter(self.dl) if self.leader else range(len(self.dl))
-        # Non-leaders iterate dummy range to keep step counts aligned
-        for maybe_batch in it:
-            batch = maybe_batch if self.leader else None
-            batch = _broadcast_batch(batch, self.tp_group)
+        it: Optional[Iterator] = iter(self.dl) if self.leader else None
+        while True:
+            if self.leader:
+                assert it is not None
+                try:
+                    payload = (True, next(it))
+                except StopIteration:
+                    payload = (False, None)
+            else:
+                payload = None
+
+            has_batch, batch = _broadcast_batch(payload, self.tp_group)
+            if not has_batch:
+                return
             yield batch
 
     def __len__(self) -> int:
         return len(self.dl)
+
+    def save_state(self) -> Any | None:
+        """Save the underlying loader state on TP leaders only."""
+        if not self.leader:
+            return None
+        save_state = getattr(self.dl, "save_state", None)
+        return save_state() if callable(save_state) else None
+
+    def load_state(self, state: Any | None) -> None:
+        """Restore the underlying loader state on TP leaders only."""
+        if not self.leader or state is None:
+            return
+        load_state = getattr(self.dl, "load_state", None)
+        if not callable(load_state):
+            raise ValueError("underlying dataloader cannot restore checkpoint state")
+        load_state(state)
 
 
 # --- main factory ----------------------------------------------------------

@@ -11,8 +11,8 @@ See:
 ezpz launch python3 -m ezpz.examples.hf_trainer \
     --streaming \
     --dataset_name=eliplutchok/fineweb-small-sample \
-    --tokenizer_name meta-llama/Llama-3.2-1B \
-    --model_name_or_path meta-llama/Llama-3.2-1B \
+    --tokenizer_name openai-community/gpt2 \
+    --model_name_or_path openai-community/gpt2 \
     --bf16=true \
     --do_train=true \
     --do_eval=true \

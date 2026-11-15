@@ -39,6 +39,24 @@ Ranks aggregate Zephon checkpoint state through `torchrun`'s TCPStore (already p
 - No grain wrapper beyond the already-documented grain row-group pattern — we keep `hf` default.
 - No changes to `ezpz.submit` / `ezpz launch` beyond passing through `ZEPHON_*` env vars.
 
+## Tradeoffs vs HF-AOT
+
+Three ways to feed tokens into fsdp_tp, each with a different cost curve.
+The right choice depends on dataset size, job churn, and whether you need
+resume determinism.
+
+| Dimension | HF datasets + DistributedSampler (current default) | AOT tokenize → Arrow/Parquet | Zephon (this spec) |
+|---|---|---|---|
+| Setup | `uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz"` | Same + one-off offline tokenize+save | `uv pip install --no-cache --link-mode=copy "git+https://github.com/saforem2/ezpz[zephon]"` + TOML recipe |
+| First-batch latency (smoke, 16 docs, seq 32) | download+load_dataset+map+cache ≈ 5–30 s (cold), ~1 s (warm, cached) | same cold cost, then zero on reload (Arrow mmap) | import ~0.9 s + first batch ~3 s (tokenize on the fly), subsequent ~0.1 ms/batch |
+| Throughput (steady state) | memcpy from Arrow shards; ~CPU bound by sampler shuffle | fastest (direct Arrow mmap, no tokenize) | tokenize + pack per step; hidden by prefetch but still CPU-bound on tiny fixtures |
+| Checkpoint resume | re-reads dataset, re-shards by new DP degree — packing that depended on previous sharding silently changes (wrong tokens in packed sequences) | same as HF (sampler owns sharding) | elastic: checkpoint is pipeline-wide, survives DP resize (spare-swap on Aurora) |
+| Disk | HF cache (fingerprint-named Arrow) + tokenizer cache; unbounded per job | Arrow/Parquet materialization (one copy per tokenizer) | shard cache (shared per node, bounded at 500 GB in integration) |
+| Mixtures/mixtures | not natively; hack via ConcatDataset + custom sampler | same | first-class: [[sources]] with weight, token-aware mixing |
+| When to use | smoke tests, quick finetunes on gated HF repos (<10 K rows after --hf-limit) | stable corpora you re-read unchanged (pretrained vocab fixed) | Aurora/Polaris pretraining where spare-swap resume determinism matters; mixture ablations |
+
+Rule of thumb: keep HF default for smoke/eval; use AOT for locked-vocab throughput records; use Zephon when resume-determinism or mixture experimentation is a requirement.
+
 ## Risks & mitigations
 
 - Zephon is beta (0.2.1, 85 stars) — pin via `pyproject.toml` `zephon==0.2.*`, behind an optional extra `ezpz[zephon]` so main deps don't carry it.

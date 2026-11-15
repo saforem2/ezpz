@@ -454,7 +454,10 @@ from `ModelArgs`, moved to the device, optionally given a
 **DataLoader setup.** Three branches: MNIST, random synthetic data, or
 HuggingFace datasets. For HF data, a `DistributedSampler` partitions
 across the DP dimension, and `TPBroadcastDataLoader` replicates batches
-within each TP group.
+within each TP group. Pass `--dataloader zephon --zephon-recipe <toml>`
+(requires `ezpz[zephon]`) for streaming mixtures that can resume across
+data-parallel degree changes; see the [Zephon data loading guide](../guides/zephon-dataloader.md)
+and [design spec](../../superpowers/specs/2026-11-01-zephon-dataloader-design.md).
 
 ```python title="src/ezpz/examples/fsdp_tp.py:2659:2679"
 --8<-- "src/ezpz/examples/fsdp_tp.py:2659:2679"

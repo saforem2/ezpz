@@ -1,0 +1,8 @@
+{"text":"Code is text too, and the tokenizer does not need to know the difference."}
+{"text":"A second source lets us test mixture proportions and lane assignment."}
+{"text":"Elastic resume must keep global batches identical after DP degree changes."}
+{"text":"Each source has its own shard, and the mixture spec chooses between them by weight."}
+{"text":"Ranks aggregate lane state through a TCPStore or a shared directory on the distributed filesystem."}
+{"text":"The run id must be stable across save and resume phases of one training run."}
+{"text":"The reference integration uses toml recipes that resolve relative paths against that toml file."}
+{"text":"This file exists so the smoke recipe has something to read without hitting the network."}

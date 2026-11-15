@@ -1830,6 +1830,16 @@ ezpz_setup_venv_from_conda() {
 		wdname="$(basename "$(ezpz_get_working_dir)")"
 		local pyname
 		pyname="$(basename "${python_root}")"
+		# Conda module roots are all named mconda3, so basename alone reuses
+		# a venv created on top of an older Torch/Python stack. Include the
+		# dated parent directory in the cache key for module-managed roots.
+		if [[ "${pyname}" == "mconda3" && "${python_root}" == *"/mconda3" ]]; then
+			local conda_release
+			conda_release="$(basename "$(dirname "${python_root}")")"
+			if [[ "${conda_release}" =~ ^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$ ]]; then
+				pyname="${pyname}-${conda_release}"
+			fi
+		fi
 		local env_name
 		env_name="${wdname}-${pyname}"
 		local ptmodstr
