@@ -30,16 +30,18 @@
   --h5-padding-block: 2pt;
   --h6-padding-block: 2pt;
 
-  --md-text-font: "Iosevka Web";
-  --md-code-font: "Iosevka Fixed Web";
+  --md-text-font:
+    "SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas,
+    "Liberation Mono", monospace;
+  --md-code-font:
+    "SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas,
+    "Liberation Mono", monospace;
   --font-family:
-    "Iosevka Web", monospace, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji",
-    "Segoe UI Emoji", "Segoe UI Symbol";
+    "SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas,
+    "Liberation Mono", monospace;
   --font-family-headings:
-    "Iosevka Web", monospace, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji",
-    "Segoe UI Emoji", "Segoe UI Symbol";
+    "SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas,
+    "Liberation Mono", monospace;
   /* --font-family-headings: "mIosevka-QP Web"; */
   --link-border-radius: 0.4rem;
 
@@ -102,7 +104,7 @@
   --md-code-bg-color--light: --md-default-fg-color--lightest: oklch(
       from var(--md-code-fg-color) calc(l * 1.15) c h / 0.5
     );
-  --md-typeset-a-color: rgba(19, 122, 245, 1);
+  --md-typeset-a-color: #005fb8;
   /* --md-accent-fg-color: oklch(from rgb(19, 122, 245) l c h); */
   --md-accent-fg-color: oklch(from #ff1a8f l c h);
   /* --md-accent-bg-color: oklch(from rgb(19, 122, 245) calc(l * 1.15) c h / 0.1); */
@@ -178,6 +180,8 @@
 
   .md-code__button {
     color: var(--md-default-fg-color--lighter);
+    min-width: 26px;
+    min-height: 26px;
   }
 }
 
@@ -490,7 +494,7 @@
 .md-code__nav {
   margin-block: 0.1rem;
   margin-inline-end: 0.5rem;
-  gap: -0.5rem;
+  gap: 0.25rem;
 }
 
 .md-nav__item .md-nav__link--active code {

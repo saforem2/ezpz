@@ -280,10 +280,13 @@ This will:
 
     How this works varies by machine:
 
-    - **ALCF** (Aurora, Polaris, Sophia, Sunspot, Sirius): Load the most
-      recent conda module and activate the base environment. On Sirius
-      this probes: it prefers the `/soft/modulefiles` conda stack and
-      falls back to micromamba only if that tree is absent.
+    - **ALCF** (Aurora, Polaris, Sophia, Sunspot): Load the most recent
+      conda module and activate the base environment.
+    - **Sirius**: Load `conda/2026-10-09` (CUDA 13.0 / cuDNN 9.26) and
+      activate `base`. Set `EZPZ_SIRIUS_CONDA_MODULE` to select a replacement
+      module when the site retires that version. The module tree defaults to
+      `/soft/modulefiles`; set `EZPZ_SIRIUS_MODULE_ROOT` to use another tree.
+      If the module cannot be loaded, setup keeps the micromamba fallback.
     - **Frontier**: Load AMD modules (ROCm, RCCL, etc.) and activate base conda.
     - **Perlmutter**: Load the appropriate `pytorch` module and activate.
     - **Unknown**: Look for a `conda`, `mamba`, or `micromamba` executable
@@ -448,6 +451,15 @@ uv pip install ...
 | `ezpz_load_modules_aurora` | `oneapi`, `hdf5`, `pti-gpu` + XPU runtime env + `FI_MR_CACHE_MONITOR=userfaultfd` | `frameworks` |
 | `ezpz_load_modules_sunspot` | `oneapi`, `hdf5`, `pti-gpu` + XPU runtime env | `frameworks` |
 | `ezpz_load_modules_polaris` | `PrgEnv-gnu`, `craype-x86-milan`, `cray-hdf5-parallel`, `cudnn`, `gcc-native` + CUDA paths, NCCL/TensorRT, ALCF proxy, MPI/JAX hints | `conda` |
+| `ezpz_load_modules_sirius` | CUDA 13 system runtime modules (`PrgEnv-gnu`, `craype-x86-milan`, `cray-hdf5-parallel`, `cudnn/9.26.0`, `gcc-native`) | `conda` |
+
+The all-in-one Sirius setup uses the pinned `conda/2026-10-09` module, which
+provides the CUDA 13.0 / cuDNN 9.26 Python stack. Override it with
+`EZPZ_SIRIUS_CONDA_MODULE`; override the module tree with
+`EZPZ_SIRIUS_MODULE_ROOT`. `ezpz_load_modules_sirius` loads only the system
+runtime modules for custom environments and checks that `cudnn/9.26.0` became
+active. If a Python environment is already active, Sirius setup preserves it
+and loads that CUDA 13 system runtime.
 
 The Polaris helper reverse-engineers the env vars the canonical
 conda module sets (`/soft/modulefiles/conda/<DATE>.lua`) — CUDA
