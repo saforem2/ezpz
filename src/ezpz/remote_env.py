@@ -97,8 +97,22 @@ def build_env_setup(
         return None
     parts = []
     if env_path is not None:
-        # Bind relative paths before a setup script can change directory.
-        parts.append(f"""\
+        # Tarball shorthand: --env /path/to/env.tar.gz extracts to /tmp and
+        # activates from there (complements `ezpz tar-env` + `ezpz yeet`).
+        if env_path.endswith((".tar.gz", ".tgz", ".tar")):
+            tar_src = shlex.quote(env_path)
+            parts.append(f"""\
+_EZPZ_TAR={tar_src}
+if [[ "$_EZPZ_TAR" != /* ]]; then _EZPZ_TAR="$PWD/$_EZPZ_TAR"; fi
+_EZPZ_ENV="/tmp/${{PBS_JOBID:-${{SLURM_JOB_ID:-$$}}}}-env"
+mkdir -p "$_EZPZ_ENV" && tar -xzf "$_EZPZ_TAR" -C "$_EZPZ_ENV" --strip-components=0 2>/dev/null || tar -xzf "$_EZPZ_TAR" -C "$_EZPZ_ENV"
+# Many tarballs contain a single top-level dir (e.g. .venv/) — descend into it.
+if [[ $(ls -1 "$_EZPZ_ENV" | wc -l) -eq 1 ]] && [[ -d "$_EZPZ_ENV/$(ls -1 "$_EZPZ_ENV")" ]]; then
+    _EZPZ_ENV="$_EZPZ_ENV/$(ls -1 "$_EZPZ_ENV")"
+fi
+""")
+        else:
+            parts.append(f"""\
 _EZPZ_ENV={shlex.quote(env_path)}
 if [[ "$_EZPZ_ENV" != /* ]]; then _EZPZ_ENV="$PWD/$_EZPZ_ENV"; fi
 """)
