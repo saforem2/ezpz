@@ -62,6 +62,8 @@ ezpz launch python3 -m ezpz.examples.fsdp_tp \
   torchtitan's `agpt_configs` registry exactly (`dim`, `n_layers`, `n_heads`,
   `n_kv_heads`, `vocab_size`, `hidden_dim`, `rope_theta` all match). Useful
   for A/B'ing against a torchtitan agpt run on identical architecture.
+  See the [Pre-Training AuroraGPT on Intel XPUs paper](
+  https://www.computer.org/csdl/proceedings-article/sc-w/2026/122100a636/2lkuEi9dZFS).
   Aliases: `agpt2b`, `agpt_2b`, `AGPT-2B` (and 20b counterparts).
 - **Load a HuggingFace model** — pass any `--model owner/repo` (e.g.
   `--model meta-llama/Llama-3.2-1B`). The `/` is the sentinel — anything
