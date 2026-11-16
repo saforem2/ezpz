@@ -288,6 +288,8 @@ extra_css = [
     "stylesheets/one-light.css",
     "stylesheets/atom-one-dark-reasonable.css",
     "stylesheets/theme-performance-20261114.css",
+    "https://iosevka-webfonts.github.io/iosevka/Iosevka.css",
+    "https://iosevka-webfonts.github.io/iosevka-fixed/iosevka-fixed.css",
     # "stylesheets/custom.css",
     # "https://drafts.csswg.org/css-color-4/#lab-colors",
     # "https://drafts.csswg.org/css-color-4/#resolving-lab-lch-values",

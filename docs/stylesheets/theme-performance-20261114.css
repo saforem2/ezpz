@@ -30,19 +30,14 @@
   --h5-padding-block: 2pt;
   --h6-padding-block: 2pt;
 
-  --md-text-font:
-    "SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas,
-    "Liberation Mono", monospace;
-  --md-code-font:
-    "SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas,
-    "Liberation Mono", monospace;
+  --md-text-font: "Iosevka Web";
+  --md-code-font: "Iosevka Fixed Web";
   --font-family:
-    "SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas,
-    "Liberation Mono", monospace;
+    "Iosevka Web", "SFMono-Regular", "Cascadia Code", "Roboto Mono",
+    Consolas, "Liberation Mono", monospace;
   --font-family-headings:
-    "SFMono-Regular", "Cascadia Code", "Roboto Mono", Consolas,
-    "Liberation Mono", monospace;
-  /* --font-family-headings: "mIosevka-QP Web"; */
+    "Iosevka Web", "SFMono-Regular", "Cascadia Code", "Roboto Mono",
+    Consolas, "Liberation Mono", monospace;
   --link-border-radius: 0.4rem;
 
   --h1-padding: 0pt;
