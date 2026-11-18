@@ -64,11 +64,30 @@ The generated script includes:
 
 ### 2. Submit an existing script
 
-Pass a `.sh` file directly:
+Pass a `.sh`, `.bash`, `.job`, `.pbs`, `.sbatch` or `.slurm` file directly:
 
 ```bash
-ezpz submit job.sh --nodes 4 --time 02:00:00
+ezpz submit job.pbs
+ezpz submit job.pbs --remote aurora --workdir /lus/flare/projects/<proj>/<repo>
 ```
+
+The script is submitted as-is with a bare `qsub <script>` / `sbatch <script>`,
+locally and over SSH. Resources come only from its own `#PBS` / `#SBATCH`
+directives, so put everything there: node count, walltime, queue, account,
+filesystems, and the output path (`#PBS -o`). There is no `-v` either, so
+any knob the script reads needs an in-script default.
+
+Script mode therefore rejects `--nodes`, `--time`, `--queue`, `--account`,
+`--filesystems`, `--job-name`, `--gpus-per-node`, `--ntasks-per-node` and
+`--constraint` (as well as `--env` / `--env-setup-script`) with a usage error
+instead of silently dropping them.
+
+With `--remote`, the local file is piped to `~/.ezpz-remote-job.sh` on the
+host and submitted from `--workdir` (which becomes `PBS_O_WORKDIR`). Script
+mode always uses the SSH backend: IRI takes node count, walltime and queue as
+API arguments rather than reading the script, so `--backend auto` uses SSH and
+`--backend iri` is rejected. Check with `--dry-run` first; it prints the exact
+script that would be sent.
 
 ## Options
 

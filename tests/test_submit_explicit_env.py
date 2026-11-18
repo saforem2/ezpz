@@ -331,6 +331,82 @@ def test_script_mode_rejects_ignored_env_options(tmp_path, remote, option):
     assert "generated commands" in result.output
 
 
+@pytest.mark.parametrize("remote", [(), ("--remote", "aurora")])
+@pytest.mark.parametrize(
+    "flag",
+    [
+        ("-N", "4"),
+        ("--time", "02:00:00"),
+        ("-q", "prod"),
+        ("-A", "proj"),
+        ("--filesystems", "home:flare"),
+        ("--job-name", "x"),
+    ],
+)
+def test_script_mode_rejects_ignored_resource_flags(tmp_path, remote, flag):
+    """A script is submitted with a bare qsub, so these never reach PBS."""
+    job = tmp_path / "job.pbs"
+    job.write_text("#!/bin/bash\n#PBS -l select=2\necho hi\n")
+    result = CliRunner().invoke(
+        main,
+        [
+            "submit",
+            *remote,
+            "--scheduler",
+            "PBS",
+            "--dry-run",
+            *flag,
+            str(job),
+        ],
+    )
+    assert result.exit_code == 2, result.output
+    assert "#PBS / #SBATCH directives" in result.output
+
+
+@pytest.mark.parametrize("remote", [(), ("--remote", "aurora")])
+def test_script_mode_without_resource_flags_passes_script_through(
+    tmp_path, remote
+):
+    job = tmp_path / "job.pbs"
+    text = "#!/bin/bash\n#PBS -l select=2\necho hi\n"
+    job.write_text(text)
+    result = CliRunner().invoke(
+        main, ["submit", *remote, "--scheduler", "PBS", "--dry-run", str(job)]
+    )
+    assert result.exit_code == 0, result.output
+    assert text in result.output
+
+
+def test_remote_script_mode_uses_ssh_not_iri_by_default(tmp_path):
+    """auto would try IRI on Aurora and submit under the CLI defaults."""
+    job = tmp_path / "job.pbs"
+    job.write_text("#!/bin/bash\n#PBS -l select=2\necho hi\n")
+    result = CliRunner().invoke(
+        main, ["submit", "--remote", "aurora", "--dry-run", str(job)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "backend=ssh" in result.output
+
+
+def test_remote_script_mode_rejects_iri_backend(tmp_path):
+    job = tmp_path / "job.pbs"
+    job.write_text("#!/bin/bash\n#PBS -l select=2\necho hi\n")
+    result = CliRunner().invoke(
+        main,
+        [
+            "submit",
+            "--remote",
+            "aurora",
+            "--backend",
+            "iri",
+            "--dry-run",
+            str(job),
+        ],
+    )
+    assert result.exit_code == 2, result.output
+    assert "Use --backend ssh" in result.output
+
+
 @pytest.mark.parametrize("option", ["--env", "--env-setup-script"])
 def test_empty_environment_options_are_usage_errors(option):
     result = CliRunner().invoke(

@@ -81,7 +81,13 @@ Anti-pattern: hand-building `qsub … -- /bin/bash $D/script.sh` with a separate
 ezpz submit --help
 ```
 
-Key flags: `--remote` (or positional `ezpz submit aurora …`), `-N` nodes, `-q` queue, `-A` account, `-t`/`--time` walltime, `--workdir` (must exist; PBS defaults to `$PBS_O_WORKDIR/ezpz-$PBS_JOBID`, Slurm to `$SLURM_SUBMIT_DIR/ezpz-$SLURM_JOB_ID`), `--filesystems`, `--env` / `--env-setup-script` (explicit env overrides — no managed download), `--no-launch`, `--no-strict`, `--dry-run`, `--gpus-per-node`, `-C` constraint. Existing scheduler scripts passed as `ezpz submit job.sh -N 4` reject `--env` — put setup inside the script.
+Key flags: `--remote` (or positional `ezpz submit aurora …`), `-N` nodes, `-q` queue, `-A` account, `-t`/`--time` walltime, `--workdir` (must exist; PBS defaults to `$PBS_O_WORKDIR/ezpz-$PBS_JOBID`, Slurm to `$SLURM_SUBMIT_DIR/ezpz-$SLURM_JOB_ID`), `--filesystems`, `--env` / `--env-setup-script` (explicit env overrides — no managed download), `--no-launch`, `--no-strict`, `--dry-run`, `--gpus-per-node`, `-C` constraint. Those resource flags apply only to generated commands.
+
+**Existing scheduler scripts** (`ezpz submit job.pbs`) are submitted as-is with a bare `qsub`/`sbatch`, locally and over SSH: `-N/-t/-q/-A/--filesystems/--job-name/--gpus-per-node/--ntasks-per-node/-C` and `--env`/`--env-setup-script` are rejected, and there is no `-o` or `-v`. Put every resource, the output path (`#PBS -o`), and a default for every knob inside the script. With `--remote`, the local file is piped to `~/.ezpz-remote-job.sh` and submitted from `--workdir`; script mode always uses SSH (IRI would take node count/walltime/queue from CLI defaults, not the directives), and `--backend iri` is rejected. Older ezpz silently dropped those flags and let `auto` try IRI — on those versions pass `--backend ssh` explicitly. Always `--dry-run` first:
+
+```bash
+ezpz submit job.pbs --remote aurora --workdir /lus/flare/projects/<proj>/<repo> --dry-run
+```
 
 Full contract: `docs/guides/remote-submission.md`, `docs/cli/submit.md`.
 
@@ -552,7 +558,7 @@ Rules that come from real misreadings, not style preference:
 Read `docs/guides/remote-submission.md` + the CLI pages under `docs/cli/` for the full contract. Summary for agents:
 
 - **Positional sugar:** `ezpz submit aurora ...` ≡ `ezpz submit --remote aurora ...`. Same for `status`/`cancel` (`ezpz status aurora --limit 5` lists your jobs on Aurora; job IDs are numeric, hosts alphabetic — no ambiguity).
-- **Auto is IRI-first** on Aurora/Polaris/Crux, SSH elsewhere. Run `uvx alcf-tokens login iri` on the machine invoking ezpz, or supply `ALCF_IRI_TOKEN` there. Scheduler rejections must not trigger a retry. Verify ambiguous mutation failures before resubmitting.
+- **Auto is IRI-first** on Aurora/Polaris/Crux, SSH elsewhere, for generated commands only; an existing job script always goes over SSH. Run `uvx alcf-tokens login iri` on the machine invoking ezpz, or supply `ALCF_IRI_TOKEN` there. Scheduler rejections must not trigger a retry. Verify ambiguous mutation failures before resubmitting.
 - **Fan-out status:** `ezpz status` with no args fans out to every reachable machine (IRI + SSH) into one table (Host/Job ID/User/State/Queue/Output/Exit + running-nodes block like `qmert`). Add `--owner`/`--all-users`/`--historical`/`--states`.
 - **No double launch:** `ezpz submit` already wraps with `ezpz launch`. A redundant `ezpz launch` prefix is auto-stripped with a warning; use `--no-launch` only for custom flags.
 - **Choose the environment first:** `--env PATH` selects an existing venv/conda/Python prefix (or a Python executable under `PREFIX/bin/`). `--env-setup-script PATH` sources a target-side shell script **before** selecting `--env`; use both for module-dependent environments. Neither option uploads files. Scripts/environment paths must be visible to compute nodes; prefer absolute shared paths.

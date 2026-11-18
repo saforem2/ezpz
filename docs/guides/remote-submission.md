@@ -172,6 +172,14 @@ Prefer **`iri`** when:
 - you are automating from somewhere with no SSH credentials, such as CI;
 - the target is Aurora, Polaris or Crux.
 
+An existing job script (`ezpz submit job.pbs --remote aurora`) always goes
+over **SSH**. IRI takes node count, walltime and queue as API arguments, not
+from the script's `#PBS` directives, so `auto` picks SSH for script mode and
+`--backend iri` is rejected. The script is piped to `~/.ezpz-remote-job.sh`
+and submitted with a bare `qsub` from `--workdir`: resource flags, `-o` and
+`-v` are not passed, so the script must carry all of them as directives and
+in-script defaults. See [`ezpz submit`](../cli/submit.md#2-submit-an-existing-script).
+
 ## Worked examples
 
 === "Aurora (PBS)"
