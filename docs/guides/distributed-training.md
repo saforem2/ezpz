@@ -1035,10 +1035,12 @@ generated scripts look like:
 If you have your own job script, submit it directly:
 
 ```bash
-ezpz submit job.sh --nodes 4 --time 02:00:00
+ezpz submit job.sh
 ```
 
-Resource directives in the script are preserved; CLI flags override them.
+The script is submitted as-is, so its own `#PBS` / `#SBATCH` directives set
+the resources. Resource flags such as `--nodes` and `--time` do not override
+them; script mode rejects those flags. See [`ezpz submit`](../cli/submit.md#2-submit-an-existing-script).
 
 ### Custom Environment Setup
 
