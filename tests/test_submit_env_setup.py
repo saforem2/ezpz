@@ -84,7 +84,7 @@ def test_scheduler_script_extensions_are_recognised(tmp_path, monkeypatch):
         f.write_text("#!/bin/bash\necho hi\n")
         res = CliRunner().invoke(
             main,
-            ["submit", str(f), "-N", "1", "--dry-run", "--scheduler", "PBS"],
+            ["submit", str(f), "--dry-run", "--scheduler", "PBS"],
         )
         assert res.exit_code == 0, f"{suffix}: {res.output[:200]}"
         assert "ezpz launch" not in res.output, (

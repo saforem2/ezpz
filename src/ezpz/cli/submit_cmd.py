@@ -153,7 +153,8 @@ def submit_cmd(
     \b
     Two modes:
       1. Wrap a command:  ezpz submit -N2 -q debug -- python3 -m my.module
-      2. Submit a script: ezpz submit job.sh -N4 --time 02:00:00
+      2. Submit a script: ezpz submit job.sh
+         (resources come from the script's own #PBS / #SBATCH directives)
     """
     from ezpz.submit import submit
 
@@ -205,12 +206,51 @@ def submit_cmd(
             "put environment setup inside an existing job script."
         )
 
+    if script_path is not None:
+        # An existing script is submitted with a bare `qsub <script>` /
+        # `sbatch <script>` (locally and over SSH), so resource flags never
+        # reach the scheduler. Accepting them silently let
+        # `ezpz submit job.pbs -N 4` run with whatever the script said.
+        ctx = click.get_current_context()
+        ignored = [
+            flag
+            for name, flag in (
+                ("nodes", "--nodes"),
+                ("walltime", "--time"),
+                ("queue", "--queue"),
+                ("account", "--account"),
+                ("filesystems", "--filesystems"),
+                ("job_name", "--job-name"),
+                ("gpus_per_node", "--gpus-per-node"),
+                ("ntasks_per_node", "--ntasks-per-node"),
+                ("constraint", "--constraint"),
+            )
+            if ctx.get_parameter_source(name)
+            not in (None, click.core.ParameterSource.DEFAULT)
+        ]
+        if ignored:
+            raise click.UsageError(
+                f"{', '.join(ignored)} apply only to generated commands; "
+                "an existing job script is submitted as-is, so set these "
+                "as #PBS / #SBATCH directives inside it."
+            )
+        if remote and backend.lower() == "iri":
+            raise click.UsageError(
+                "--backend iri cannot submit an existing job script: IRI "
+                "takes node count, walltime and queue as API arguments, not "
+                "from the script's directives. Use --backend ssh."
+            )
+        if remote:
+            # auto would try IRI first on Aurora/Polaris/Crux and submit the
+            # script under the CLI defaults (1 node, 01:00:00, debug).
+            backend = "ssh"
+
     if script_path is None and command is None:
         raise click.UsageError(
             "Provide a command after '--' or a script file.\n\n"
             "Examples:\n"
             "  ezpz submit -N2 -q debug -- python3 -m ezpz.examples.test\n"
-            "  ezpz submit job.sh --nodes 4"
+            "  ezpz submit job.sh"
         )
 
     # submit already wraps with `ezpz launch` — silently strip a redundant prefix
